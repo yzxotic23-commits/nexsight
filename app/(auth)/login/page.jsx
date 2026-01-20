@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useToast } from '@/lib/toast-context'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,7 +20,7 @@ export default function LoginPage() {
 
     try {
       const result = await signIn('credentials', {
-        email,
+        username,
         password,
         redirect: false,
       })
@@ -56,14 +56,14 @@ export default function LoginPage() {
           )}
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium mb-2 text-foreground">
-              Email
+            <label htmlFor="username" className="block text-sm font-medium mb-2 text-foreground">
+              Username
             </label>
             <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-light-bg dark:bg-dark-bg text-foreground focus:outline-none focus:ring-2 focus:ring-gold-500"
             />
@@ -93,7 +93,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-          <p>Demo: Use any email/password to login</p>
+          <p>Default credentials: admin / admin</p>
         </div>
       </div>
     </div>

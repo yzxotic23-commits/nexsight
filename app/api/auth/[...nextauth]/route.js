@@ -10,20 +10,28 @@ const authOptions = {
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        username: { label: 'Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        // Demo authentication - accept any credentials
-        // In production, validate against your database
-        if (credentials?.email && credentials?.password) {
+        // Default credentials: admin/admin
+        if (!credentials?.username || !credentials?.password) {
+          return null
+        }
+
+        const defaultUsername = 'admin'
+        const defaultPassword = 'admin'
+
+        if (credentials.username === defaultUsername && credentials.password === defaultPassword) {
           return {
             id: '1',
-            email: credentials.email,
-            name: 'Admin User',
+            username: credentials.username,
+            name: 'Admin',
+            email: 'admin@nexxpay.com',
             role: 'admin',
           }
         }
+
         return null
       },
     }),
