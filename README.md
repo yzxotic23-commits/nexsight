@@ -129,9 +129,53 @@ Project siap untuk deployment di Vercel. File `vercel.json` sudah dikonfigurasi.
 
 ### Environment Variables untuk Production
 
-Di Vercel, set environment variables:
-- `NEXTAUTH_SECRET` - Secret key untuk NextAuth.js (generate dengan: `openssl rand -base64 32`)
-- `NEXTAUTH_URL` - URL aplikasi (otomatis di Vercel)
+**PENTING**: Di Vercel, set environment variables berikut:
+
+#### 1. NEXTAUTH_SECRET (Required)
+Secret key untuk encrypt JWT token. Untuk aplikasi demo/dummy, Anda bisa menggunakan:
+
+**Option 1: Generate baru (Recommended)**
+```bash
+openssl rand -base64 32
+```
+
+**Option 2: Gunakan default (untuk demo saja)**
+```
+nexflow-dashboard-secret-key-change-in-production-2024
+```
+
+**Option 3: Online generator**
+- Kunjungi: https://generate-secret.vercel.app/32
+- Copy hasilnya
+
+#### 2. NEXTAUTH_URL (Required)
+URL production aplikasi Anda. Untuk project ini:
+```
+https://nexxpay-six.vercel.app
+```
+
+**PENTING**: Ganti dengan URL Vercel Anda jika berbeda.
+
+**Cara set di Vercel:**
+1. Buka project di Vercel Dashboard
+2. Go to **Settings** → **Environment Variables**
+3. Klik **Add New**
+4. Tambahkan variable pertama:
+   - **Name**: `NEXTAUTH_SECRET`
+   - **Value**: (paste secret key yang sudah di-generate atau gunakan default di atas)
+   - **Environment**: Pilih **Production**, **Preview**, dan **Development** (semua)
+5. Klik **Add New** lagi
+6. Tambahkan variable kedua:
+   - **Name**: `NEXTAUTH_URL`
+   - **Value**: `https://nexxpay-six.vercel.app` (atau URL Vercel Anda)
+   - **Environment**: Pilih **Production**, **Preview**, dan **Development** (semua)
+7. Klik **Save**
+8. **Redeploy** aplikasi (go to Deployments → klik 3 dots → Redeploy)
+
+**Catatan:**
+- Setelah menambahkan environment variables, **WAJIB redeploy** agar perubahan berlaku
+- Untuk aplikasi demo/dummy, bisa menggunakan default secret key di atas
+- Untuk production real, **WAJIB generate secret key baru** yang unik
 
 ## Troubleshooting
 

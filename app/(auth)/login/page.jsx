@@ -31,11 +31,21 @@ export default function LoginPage() {
         showToast('Login failed. Please check your credentials.', 'error')
       } else if (result?.ok) {
         showToast('Login successful! Welcome back!', 'success')
-        // Redirect to dashboard after successful login
-        window.location.href = '/dashboard'
+        // Wait for session to be created, then redirect
+        setTimeout(() => {
+          window.location.href = '/dashboard'
+        }, 300)
       } else {
-        setError('Login failed. Please try again.')
-        showToast('Login failed. Please try again.', 'error')
+        // Check if result exists but no error (might be redirecting)
+        if (result && !result.error) {
+          showToast('Login successful! Welcome back!', 'success')
+          setTimeout(() => {
+            window.location.href = '/dashboard'
+          }, 300)
+        } else {
+          setError('Login failed. Please try again.')
+          showToast('Login failed. Please try again.', 'error')
+        }
       }
     } catch (err) {
       setError('An error occurred. Please try again.')
