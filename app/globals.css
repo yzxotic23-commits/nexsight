@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 240 240;
+    --foreground: 15 23 42;
+  }
+
+  .dark {
+    --background: 0 0 0;
+    --foreground: 255 255 255;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Smooth transitions for theme switching */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* Custom Scrollbar Styles */
+/* Hide default scrollbar for Chrome, Safari, and Edge */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.5);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.7);
+}
+
+/* Dark mode scrollbar */
+.dark * {
+  scrollbar-color: rgba(75, 85, 99, 0.5) transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(75, 85, 99, 0.5);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(75, 85, 99, 0.7);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
