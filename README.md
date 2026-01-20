@@ -1,4 +1,4 @@
-# nexxpay
+# nexsight
 
 Modern, production-ready KPI Dashboard untuk monitoring finansial dan transaksi.
 
@@ -45,7 +45,7 @@ npm install
 
 ```env
 NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=nexflow-dashboard-secret-key-change-in-production-2024
+NEXTAUTH_SECRET=nexsight-dashboard-secret-key-change-in-production-2024
 ```
 
 Atau copy dari `.env.example`:
@@ -63,7 +63,9 @@ Buka [http://localhost:3000](http://localhost:3000) di browser.
 
 ### Login
 
-Untuk demo, gunakan email dan password apapun untuk login.
+**Default Credentials:**
+- Username: `admin`
+- Password: `admin`
 
 ### Build
 
@@ -141,7 +143,7 @@ openssl rand -base64 32
 
 **Option 2: Gunakan default (untuk demo saja)**
 ```
-nexflow-dashboard-secret-key-change-in-production-2024
+nexsight-dashboard-secret-key-change-in-production-2024
 ```
 
 **Option 3: Online generator**
@@ -151,7 +153,7 @@ nexflow-dashboard-secret-key-change-in-production-2024
 #### 2. NEXTAUTH_URL (Required)
 URL production aplikasi Anda. Untuk project ini:
 ```
-https://nexxpay-six.vercel.app
+https://nexsight.vercel.app
 ```
 
 **PENTING**: Ganti dengan URL Vercel Anda jika berbeda.
@@ -167,7 +169,7 @@ https://nexxpay-six.vercel.app
 5. Klik **Add New** lagi
 6. Tambahkan variable kedua:
    - **Name**: `NEXTAUTH_URL`
-   - **Value**: `https://nexxpay-six.vercel.app` (atau URL Vercel Anda)
+   - **Value**: `https://nexsight.vercel.app` (atau URL Vercel Anda)
    - **Environment**: Pilih **Production**, **Preview**, dan **Development** (semua)
 7. Klik **Save**
 8. **Redeploy** aplikasi (go to Deployments → klik 3 dots → Redeploy)

@@ -2,7 +2,7 @@ import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 
 // Default values untuk development
-const defaultSecret = 'nexflow-dashboard-secret-key-change-in-production-2024'
+const defaultSecret = 'nexsight-dashboard-secret-key-change-in-production-2024'
 const defaultUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
 
 const authOptions = {
@@ -27,7 +27,7 @@ const authOptions = {
             id: '1',
             username: credentials.username,
             name: 'Admin',
-            email: 'admin@nexxpay.com',
+            email: 'admin@nexsight.com',
             role: 'admin',
           }
         }
@@ -69,7 +69,7 @@ const authOptions = {
         session.user.id = token.id
         session.user.role = token.role
         session.user.name = token.name || 'Admin'
-        session.user.email = token.email || 'admin@nexxpay.com'
+        session.user.email = token.email || 'admin@nexsight.com'
       }
       return session
     },

@@ -59,7 +59,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg transition-colors">
       <div className="w-full max-w-md p-8 bg-light-card dark:bg-dark-surface rounded-lg shadow-lg">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">NexFlow Dashboard</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">NexSight Dashboard</h1>
           <p className="text-gray-600 dark:text-gray-400">Sign in to continue</p>
         </div>
 

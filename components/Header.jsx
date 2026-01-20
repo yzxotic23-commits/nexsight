@@ -50,7 +50,7 @@ export default function Header() {
   return (
     <header className="h-16 bg-white dark:bg-dark-card flex items-center justify-between px-4 sm:px-6 lg:px-8">
       <div className="flex items-center">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white">NexFlow</h2>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white">NexSight</h2>
       </div>
 
       <div className="flex items-center space-x-3">

@@ -11,7 +11,7 @@ const poppins = Poppins({
 })
 
 export const metadata = {
-  title: 'NexFlow Dashboard',
+  title: 'NexSight Dashboard',
   description: 'Modern KPI Dashboard for Financial Monitoring',
 }
 

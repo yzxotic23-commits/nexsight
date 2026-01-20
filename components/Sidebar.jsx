@@ -78,7 +78,7 @@ export default function Sidebar() {
         <div className={`flex-1 overflow-y-auto transition-all duration-300 ${sidebarCollapsed ? 'p-3' : 'p-6'}`}>
           <div className={`flex items-center mb-8 ${sidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
             {!sidebarCollapsed && (
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">NexFlow</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">NexSight</h2>
             )}
             <button
               onClick={toggleSidebarCollapse}
