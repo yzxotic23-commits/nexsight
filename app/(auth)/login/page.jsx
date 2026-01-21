@@ -31,7 +31,8 @@ export default function LoginPage() {
         setError('Invalid credentials')
         showToast('Login failed. Please check your credentials.', 'error')
       } else if (result?.ok) {
-        showToast('Login successful! Welcome back!', 'success')
+        // Set flag untuk menampilkan toast setelah masuk dashboard
+        localStorage.setItem('showLoginSuccessToast', 'true')
         // Wait a bit for session to be created
         await new Promise(resolve => setTimeout(resolve, 500))
         // Force reload to ensure session is available

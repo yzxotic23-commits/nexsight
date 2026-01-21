@@ -92,6 +92,19 @@ export default function DashboardPage() {
     setSelectedBankMarket(selectedMarket)
   }, [selectedMarket])
 
+  // Show login success toast after page loads
+  useEffect(() => {
+    const showLoginToast = localStorage.getItem('showLoginSuccessToast')
+    if (showLoginToast === 'true') {
+      // Delay toast untuk memastikan halaman sudah selesai dimuat
+      const timer = setTimeout(() => {
+        showToast('Login successful! Welcome back!', 'success')
+        localStorage.removeItem('showLoginSuccessToast')
+      }, 200) // Delay 300ms setelah halaman dimuat
+      return () => clearTimeout(timer)
+    }
+  }, [showToast])
+
   useEffect(() => {
     // Load all dashboard data
     setMarketData(getMarketProcessingData(selectedMonth))
