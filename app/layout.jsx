@@ -16,17 +16,24 @@ export const metadata = {
   title: 'NexSight Dashboard',
   description: 'Modern KPI Dashboard for Financial Monitoring',
   icons: {
-    icon: '/logo/eyes.png',
+    icon: [
+      { url: '/logo/eyes.png', type: 'image/png' },
+      { url: '/logo/eyes.png', type: 'image/png', sizes: '32x32' },
+      { url: '/logo/eyes.png', type: 'image/png', sizes: '16x16' },
+    ],
     shortcut: '/logo/eyes.png',
     apple: '/logo/eyes.png',
   },
+  manifest: '/manifest.json',
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/logo/eyes.png" type="image/png" />
+        <link rel="icon" href="/logo/eyes.png" type="image/png" sizes="any" />
+        <link rel="apple-touch-icon" href="/logo/eyes.png" />
+        <meta name="theme-color" content="#DEC05F" />
         <script
           dangerouslySetInnerHTML={{
             __html: `

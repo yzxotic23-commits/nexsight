@@ -1,0 +1,23 @@
+{
+  "name": "NexSight Dashboard",
+  "short_name": "NexSight",
+  "description": "Modern KPI Dashboard for Financial Monitoring",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#DEC05F",
+  "icons": [
+    {
+      "src": "/logo/eyes.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo/eyes.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

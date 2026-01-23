@@ -60,7 +60,7 @@ export default function LoginPage() {
       {/* Logo Header - Landing Page Style */}
       <div className="text-center mb-0">
         <Image 
-          src="/logo/eyes.png" 
+          src="/logo/nexsight-transparent-2.png" 
           alt="NexSight Logo" 
           width={384}
           height={384}
