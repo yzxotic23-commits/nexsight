@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useToast } from '@/lib/toast-context'
 import { useSession } from 'next-auth/react'
 import ThemeToggle from '@/components/ThemeToggle'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const [username, setUsername] = useState('')
@@ -58,10 +59,13 @@ export default function LoginPage() {
 
       {/* Logo Header - Landing Page Style */}
       <div className="text-center mb-0">
-        <img 
-          src="/logo/nexsight-transparent-2.png" 
+        <Image 
+          src="/logo/eyes.png" 
           alt="NexSight Logo" 
+          width={384}
+          height={384}
           className="h-96 w-96 mx-auto object-contain"
+          priority
         />
       </div>
 
