@@ -19,11 +19,15 @@ import Link from 'next/link'
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-gray-800 dark:bg-gray-900 rounded-lg p-3 shadow-lg border border-gray-700">
-        <p className="text-white text-sm mb-1">{label}</p>
-        <p className="text-gold-500 font-bold text-base">
-          {payload[0].value} accounts
-        </p>
+      <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700">
+        <p className="text-gray-900 dark:text-white text-sm font-bold mb-2">{label}</p>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: payload[0].color || '#DEC05F' }}></div>
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{payload[0].name || 'Value'}:</span>
+          <span className="text-xs font-semibold text-gray-900 dark:text-white">
+            {typeof payload[0].value === 'number' ? payload[0].value.toFixed(1) : payload[0].value} accounts
+          </span>
+        </div>
       </div>
     )
   }
@@ -35,11 +39,15 @@ const CustomBarTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     const value = payload[0].value || 0
     return (
-      <div className="bg-gray-800 dark:bg-gray-900 rounded-lg p-3 shadow-lg border border-gray-700">
-        <p className="text-white text-sm mb-1">{label}</p>
-        <p className="text-gold-500 font-bold text-base">
-          {value.toFixed(2)}M
-        </p>
+      <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700">
+        <p className="text-gray-900 dark:text-white text-sm font-bold mb-2">{label}</p>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: payload[0].color || '#DEC05F' }}></div>
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{payload[0].name || 'Value'}:</span>
+          <span className="text-xs font-semibold text-gray-900 dark:text-white">
+            {value.toFixed(2)}M
+          </span>
+        </div>
       </div>
     )
   }
@@ -260,7 +268,7 @@ export default function BankAccountPage() {
                   return `${(value * 1000).toFixed(0)}K`
                 }}
               />
-              <Tooltip content={<CustomBarTooltip />} />
+              <Tooltip content={<CustomBarTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
               <Legend verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '10px', paddingRight: '0px', marginTop: '-48px' }} />
               <Bar dataKey="usage" fill="#DEC05F" name="Usage (M)" />
             </BarChart>

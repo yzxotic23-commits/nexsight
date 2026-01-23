@@ -19,11 +19,15 @@ import Link from 'next/link'
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-gray-800 dark:bg-gray-900 rounded-lg p-3 shadow-lg border border-gray-700">
-        <p className="text-white text-sm mb-1">{label}</p>
-        <p className="text-gold-500 font-bold text-base">
-          {payload[0].value} accounts
-        </p>
+      <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700">
+        <p className="text-gray-900 dark:text-white text-sm font-bold mb-2">{label}</p>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: payload[0].color || '#DEC05F' }}></div>
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{payload[0].name || 'Value'}:</span>
+          <span className="text-xs font-semibold text-gray-900 dark:text-white">
+            {typeof payload[0].value === 'number' ? payload[0].value.toFixed(1) : payload[0].value} accounts
+          </span>
+        </div>
       </div>
     )
   }
@@ -403,7 +407,7 @@ export default function WealthAccountPage() {
 
   return (
     <div className="space-y-6">
-      {/* Tabs and Filter Bar - Tabs and Filter Bar center */}
+        {/* Tabs and Filter Bar - Tabs and Filter Bar center */}
       <div className="mb-6">
         <div className="flex items-center justify-center gap-4 mt-4">
           {/* Tabs - Center */}
@@ -547,19 +551,19 @@ export default function WealthAccountPage() {
                       </div>
                     </th>
                     <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider border-r border-white dark:border-white">
-                      <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                         <span>ADDITION</span>
                           <Filter className="w-3.5 h-3.5 cursor-pointer hover:text-gray-200 transition-colors text-white" />
-                      </div>
+              </div>
                     </th>
                     <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider border-r border-white dark:border-white">
-                      <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                         <span>REMARK</span>
                           <Filter className="w-3.5 h-3.5 cursor-pointer hover:text-gray-200 transition-colors text-white" />
-                      </div>
+              </div>
                     </th>
                     <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider border-r border-white dark:border-white">
-                      <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
                         <span>PAYMENT TOTAL</span>
                           <Filter className="w-3.5 h-3.5 cursor-pointer hover:text-gray-200 transition-colors text-white" />
                       </div>
@@ -795,7 +799,7 @@ export default function WealthAccountPage() {
                             return (
                               <span key={page} className="px-2 text-gray-600 dark:text-gray-400">
                                 ...
-                              </span>
+                </span>
                             )
                           }
                           return null
@@ -814,9 +818,9 @@ export default function WealthAccountPage() {
                   </div>
                 )
               })()}
+              </div>
             </div>
           </div>
-        </div>
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && rowToDelete && typeof window !== 'undefined' && createPortal(
@@ -954,21 +958,21 @@ export default function WealthAccountPage() {
                 <div className="bg-gray-50 dark:bg-black rounded-lg p-4">
                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Sales</p>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">{rowToView.sales || '0.00'}</p>
-                </div>
+              </div>
                 <div className="bg-gray-50 dark:bg-black rounded-lg p-4">
                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Addition</p>
                   <p className="text-sm font-medium text-gray-900 dark:text-white">{rowToView.addition || 'N/A'}</p>
-                </div>
+              </div>
                 <div className="bg-gray-50 dark:bg-black rounded-lg p-4">
                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Payment Total</p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{rowToView.paymentTotal || '0.00'}</p>
-                </div>
               </div>
+            </div>
               <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
                 <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Remark</p>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">{rowToView.remark || 'N/A'}</p>
-              </div>
-            </div>
+          </div>
+        </div>
 
             <div className="mt-6 flex justify-end">
               <button
@@ -980,7 +984,7 @@ export default function WealthAccountPage() {
               >
                 Close
               </button>
-            </div>
+      </div>
           </div>
         </div>,
         document.body
