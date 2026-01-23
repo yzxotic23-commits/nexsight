@@ -4,8 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useFilterStore } from '@/lib/stores/filterStore'
 import { useDashboardStore } from '@/lib/stores/dashboardStore'
-import { getWealthAccountProductionData, getWealthAccountStatusData } from '@/lib/utils/mockData'
-import { formatNumber, formatPercentage } from '@/lib/utils/formatters'
+import { formatNumber, formatPercentage, formatCurrency } from '@/lib/utils/formatters'
 import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
@@ -13,7 +12,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { useSession, signOut } from 'next-auth/react'
 import { useToast } from '@/lib/toast-context'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { Users, TrendingUp, Search, Bell, HelpCircle, Settings, User, ChevronDown, Power, Filter, Plus, Trash2, Save, X, Eye, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users, TrendingUp, Search, Bell, HelpCircle, Settings, User, ChevronDown, Power, Filter, Plus, Trash2, Save, X, Eye, ChevronLeft, ChevronRight, CreditCard, DollarSign, Wallet } from 'lucide-react'
 import Link from 'next/link'
 
 // Custom Tooltip Component
@@ -273,10 +272,10 @@ export default function WealthAccountPage() {
       supplier: 'WEALTH+',
       bankAccountName: '',
       status: 'ACTIVE',
-      department: 'NP_INT_SGD',
+      department: selectedMarket === 'SGD' ? 'NP_INT_SGD' : selectedMarket === 'MYR' ? 'NP_INT_MYR' : 'NP_INT_USC',
       sellOff: '',
       startDate: '1-Jan',
-      currency: 'SGD',
+      currency: selectedMarket,
       rentalCommission: '0.00',
       commission: '0.00',
       markup: '',
@@ -302,13 +301,16 @@ export default function WealthAccountPage() {
     setIsDetailModalOpen(true)
   }
 
-  // Reset to page 1 if current page exceeds total pages after data changes
+  // Reset to page 1 if current page exceeds total pages after data changes or market changes
   useEffect(() => {
-    const totalPages = Math.ceil(bankRentData.length / itemsPerPage)
+    const filteredData = bankRentData.filter(row => row.currency === selectedMarket)
+    const totalPages = Math.ceil(filteredData.length / itemsPerPage)
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(1)
+    } else if (totalPages === 0) {
+      setCurrentPage(1)
     }
-  }, [bankRentData.length, currentPage, itemsPerPage])
+  }, [bankRentData.length, currentPage, itemsPerPage, selectedMarket])
 
   // Function to delete row after confirmation
   const confirmDelete = () => {
@@ -373,24 +375,31 @@ export default function WealthAccountPage() {
     }
   }, [isUserDropdownOpen])
 
-  useEffect(() => {
-    // Load both production and status data
-    const productionData = getWealthAccountProductionData(selectedMonth)
-    const statusData = getWealthAccountStatusData(selectedMonth)
-    setWealthAccountData({ production: productionData, status: statusData })
-  }, [selectedMonth, setWealthAccountData])
-
-  if (!wealthAccountData || !wealthAccountData.production || !wealthAccountData.status) {
-    return <div>Loading...</div>
+  // Calculate KPI metrics from bankRentData filtered by selectedMarket
+  const calculateKPIs = (market) => {
+    const filteredData = bankRentData.filter(row => row.currency === market)
+    const totalAccounts = filteredData.length
+    const activeAccounts = filteredData.filter(row => row.status === 'ACTIVE').length
+    const totalPayment = filteredData.reduce((sum, row) => {
+      const payment = parseFloat(String(row.paymentTotal).replace(/,/g, '')) || 0
+      return sum + payment
+    }, 0)
+    const totalSales = filteredData.reduce((sum, row) => {
+      const sales = parseFloat(String(row.sales).replace(/,/g, '')) || 0
+      return sum + sales
+    }, 0)
+    
+    return {
+      totalAccounts,
+      activeAccounts,
+      totalPayment,
+      totalSales
+    }
   }
 
-  const { production, status } = wealthAccountData
-
-  // Prepare chart data
-  const productionChartData = production?.dailyData?.map((day) => ({
-    date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    accounts: day.accounts,
-  })) || []
+  // Get filtered data for current market
+  const filteredBankRentData = bankRentData.filter(row => row.currency === selectedMarket)
+  const kpis = calculateKPIs(selectedMarket)
 
   return (
     <div className="space-y-6">
@@ -422,178 +431,39 @@ export default function WealthAccountPage() {
         </div>
       </div>
 
-      {/* Production Section */}
-      <div className="flex items-center justify-between mb-6">
-        {/* Spacer untuk balance */}
-        <div className="flex-1"></div>
-        
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Production</h2>
-        
-        {/* Spacer untuk balance */}
-        <div className="flex-1"></div>
-      </div>
-
-      {/* Production Content */}
-      <div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <KPICard
-            title="Total Accounts Created"
-            value={formatNumber(production.totalAccounts)}
-            change={production.growthRate}
-            icon={Users}
-            trend="up"
-          />
-          <KPICard
-            title="Previous Month"
-            value={formatNumber(production.previousMonthAccounts)}
-            change={0}
-            icon={Users}
-            trend="up"
-          />
-          <KPICard
-            title="Growth Rate"
-            value={formatPercentage(production.growthRate)}
-            change={production.growthRate}
-            icon={TrendingUp}
-            trend="up"
-          />
-        </div>
-
-        <ChartContainer
-          title="Daily Account Creation"
-        >
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={productionChartData}>
-              <defs>
-                <linearGradient id="colorAccounts" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#DEC05F" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#DEC05F" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={1} opacity={0.2} vertical={false} />
-              <XAxis dataKey="date" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
-              <YAxis 
-                stroke="#6b7280" 
-                axisLine={{ strokeWidth: 0.5 }}
-                tickLine={false}
-                tickFormatter={(value) => {
-                  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`
-                  return value.toString()
-                }}
-              />
-              <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-              <Legend verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '10px', paddingRight: '0px', marginTop: '-48px' }} />
-              <Area
-                type="monotone"
-                dataKey="accounts"
-                stroke="#DEC05F"
-                strokeWidth={2.5}
-                fill="url(#colorAccounts)"
-                name="New Accounts"
-                activeDot={{ r: 5, fill: '#000000', stroke: '#DEC05F', strokeWidth: 2 }}
-                dot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </div>
-
-      {/* Status Section */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          {/* Spacer untuk balance */}
-          <div className="flex-1"></div>
-          
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Status & Output</h2>
-          
-          {/* Spacer untuk balance */}
-          <div className="flex-1"></div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      {/* Table Section - Show for all tabs */}
+      <div className="mt-8">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPICard
             title="Total Accounts"
-            value={formatNumber(status?.totalAccounts || 0)}
+            value={formatNumber(kpis.totalAccounts)}
             change={0}
-            icon={Users}
+            icon={CreditCard}
             trend="up"
           />
           <KPICard
             title="Active Accounts"
-            value={formatNumber(status?.activeAccounts || 0)}
-            change={2.5}
-            icon={Users}
+            value={formatNumber(kpis.activeAccounts)}
+            change={kpis.totalAccounts > 0 ? ((kpis.activeAccounts / kpis.totalAccounts) * 100) : 0}
+            icon={Wallet}
             trend="up"
           />
           <KPICard
-            title="Output Volume"
-            value={formatNumber(status?.outputVolume || 0)}
-            change={5.2}
-            icon={TrendingUp}
+            title="Total Payment"
+            value={formatCurrency(kpis.totalPayment, selectedMarket)}
+            change={0}
+            icon={DollarSign}
             trend="up"
           />
           <KPICard
-            title="Utilization Ratio"
-            value={`${(status?.utilizationRatio || 0).toFixed(1)}%`}
-            change={1.8}
+            title="Total Sales"
+            value={formatCurrency(kpis.totalSales, selectedMarket)}
+            change={0}
             icon={TrendingUp}
             trend="up"
           />
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-dark-card rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-900">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Account Status</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Total Accounts</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatNumber(status?.totalAccounts || 0)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Active Accounts</span>
-                <span className="text-lg font-bold text-green-500">
-                  {formatNumber(status?.activeAccounts || 0)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Inactive Accounts</span>
-                <span className="text-lg font-bold text-gray-500">
-                  {formatNumber((status?.totalAccounts || 0) - (status?.activeAccounts || 0))}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-dark-card rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-900">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Output Metrics</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Output Volume</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatNumber(status?.outputVolume || 0)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Utilization Ratio</span>
-                <span className="text-lg font-bold text-gold-500">
-                  {(status?.utilizationRatio || 0).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Avg per Account</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatNumber((status?.outputVolume || 0) / (status?.activeAccounts || 1))}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Table Section - Only show for SGD tab */}
-      {selectedMarket === 'SGD' && (
-        <div className="mt-8">
           <div className="bg-white dark:bg-dark-card rounded-2xl shadow-lg border border-gray-200 dark:border-gray-900 overflow-hidden">
             {/* Table Header with Title and Add Button */}
             <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-dark-card border-b border-gray-200 dark:border-gray-900">
@@ -701,11 +571,25 @@ export default function WealthAccountPage() {
                 </thead>
                 <tbody className="bg-white dark:bg-dark-card">
                   {(() => {
-                    // Calculate pagination
-                    const totalPages = Math.ceil(bankRentData.length / itemsPerPage)
+                    // Calculate pagination for filtered data
+                    const totalPages = Math.ceil(filteredBankRentData.length / itemsPerPage)
                     const startIndex = (currentPage - 1) * itemsPerPage
                     const endIndex = startIndex + itemsPerPage
-                    const paginatedData = bankRentData.slice(startIndex, endIndex)
+                    const paginatedData = filteredBankRentData.slice(startIndex, endIndex)
+                    
+                    // Show "no data" message if filtered data is empty
+                    if (filteredBankRentData.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={15} className="px-4 py-12 text-center">
+                            <div className="flex flex-col items-center justify-center">
+                              <p className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-2">No Data Available</p>
+                              <p className="text-sm text-gray-400 dark:text-gray-500">There are no bank accounts for {selectedMarket} currency.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    }
                     
                     return paginatedData.map((row, index) => (
                     <tr 
@@ -869,13 +753,13 @@ export default function WealthAccountPage() {
               
               {/* Pagination */}
               {(() => {
-                const totalPages = Math.ceil(bankRentData.length / itemsPerPage)
+                const totalPages = Math.ceil(filteredBankRentData.length / itemsPerPage)
                 if (totalPages <= 1) return null
                 
                 return (
                   <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-dark-card border-t border-gray-200 dark:border-gray-800">
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, bankRentData.length)} of {bankRentData.length} entries
+                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredBankRentData.length)} of {filteredBankRentData.length} entries
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -933,7 +817,6 @@ export default function WealthAccountPage() {
             </div>
           </div>
         </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && rowToDelete && typeof window !== 'undefined' && createPortal(

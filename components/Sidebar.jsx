@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   LayoutDashboard,
-  TrendingUp,
   ArrowDownCircle,
   ArrowUpCircle,
   Users,
@@ -21,7 +20,6 @@ import { useUIStore } from '@/lib/stores/uiStore'
 
 const menuItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Market Processing', href: '/dashboard/market', icon: TrendingUp },
   { 
     name: 'Transaction', 
     icon: Receipt,
@@ -30,8 +28,8 @@ const menuItems = [
       { name: 'Withdraw Monitor', href: '/dashboard/withdraw', icon: ArrowUpCircle },
     ]
   },
-  { name: 'Wealth+ Accounts', href: '/dashboard/wealth', icon: Users },
-  { name: 'Bank Accounts', href: '/dashboard/bank', icon: CreditCard },
+  { name: 'Bank Account Rental', href: '/dashboard/wealth', icon: Users },
+  { name: 'Wealth+ Accounts', href: '/dashboard/bank', icon: CreditCard },
 ]
 
 export default function Sidebar() {
@@ -167,7 +165,7 @@ export default function Sidebar() {
               const isActive =
                 item.href === '/dashboard'
                   ? pathname === '/dashboard' || pathname === '/dashboard/'
-                  : pathname === item.href || (pathname?.startsWith(item.href + '/') && item.href !== '/dashboard/market' && !pathname?.includes('/deposit') && !pathname?.includes('/withdraw'))
+                  : pathname === item.href || (pathname?.startsWith(item.href + '/') && !pathname?.includes('/deposit') && !pathname?.includes('/withdraw'))
               
               // Collapsed view - only icon
               if (sidebarCollapsed) {

@@ -36,11 +36,10 @@ export default function TopBar() {
   // Get page title from pathname
   const getPageTitle = () => {
     if (pathname === '/dashboard') return 'Dashboard Overview'
-    if (pathname?.includes('/market')) return 'Market Processing Monitor'
     if (pathname?.includes('/deposit')) return 'Deposit Monitor'
     if (pathname?.includes('/withdraw')) return 'Withdraw Transaction Monitor'
-    if (pathname?.includes('/wealth')) return 'Wealth+ Account Monitor'
-    if (pathname?.includes('/bank')) return 'Bank Account Rental & Usage Monitor'
+    if (pathname?.includes('/wealth')) return 'Bank Account Rental'
+    if (pathname?.includes('/bank')) return 'Wealth+ Accounts'
     if (pathname?.includes('/settings')) return 'Settings'
     return 'Dashboard'
   }
