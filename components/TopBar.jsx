@@ -38,8 +38,8 @@ export default function TopBar() {
     if (pathname === '/dashboard') return 'Dashboard Overview'
     if (pathname?.includes('/deposit')) return 'Deposit Monitor'
     if (pathname?.includes('/withdraw')) return 'Withdraw Monitor'
-    if (pathname?.includes('/wealth')) return 'Bank Account Rental'
-    if (pathname?.includes('/bank')) return 'Wealths+'
+    if (pathname?.includes('/bank-account-rental')) return 'Bank Account Rental'
+    if (pathname?.includes('/wealths')) return 'Wealths+'
     if (pathname?.includes('/settings')) return 'Settings'
     return 'Dashboard'
   }

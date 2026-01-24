@@ -28,8 +28,8 @@ const menuItems = [
       { name: 'Withdraw Monitor', href: '/dashboard/withdraw', icon: ArrowUpCircle },
     ]
   },
-  { name: 'Bank Account Rental', href: '/dashboard/wealth', icon: Users },
-  { name: 'Wealths+', href: '/dashboard/bank', icon: CreditCard },
+  { name: 'Bank Account Rental', href: '/dashboard/bank-account-rental', icon: Users },
+  { name: 'Wealths+', href: '/dashboard/wealths', icon: CreditCard },
 ]
 
 export default function Sidebar() {
