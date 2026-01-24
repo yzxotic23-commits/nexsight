@@ -958,18 +958,6 @@ export default function WithdrawMonitorPage() {
           </ResponsiveContainer>
         </ChartContainer>
 
-          <ChartContainer title="Total Trans Automation">
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
-                <XAxis type="number" stroke="#6b7280" />
-                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
-                <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="totalTransAutomation" radius={[0, 4, 4, 0]} fill="#10b981" />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-
           <ChartContainer title="Total Overdue Transaction Comparison">
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
