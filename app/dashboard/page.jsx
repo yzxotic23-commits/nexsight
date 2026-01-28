@@ -404,7 +404,7 @@ export default function DashboardPage() {
     fetchBankOwnerUsedAmount()
   }, [selectedMonth])
   
-  // Fetch Bank Account Rental (Total Account) from API - filtered by date range
+  // Fetch Bank Account Rental (Total Payment) from API - filtered by date range
   useEffect(() => {
     async function fetchBankAccountRental() {
       try {
@@ -424,10 +424,14 @@ export default function DashboardPage() {
         })
         
         if (result.success && result.data && Array.isArray(result.data)) {
-          // Count total accounts with start_date within the selected date range
-          const totalCount = result.data.length
-          console.log('Bank Account Rental - Setting count to:', totalCount)
-          setBankAccountRental(totalCount)
+          // Calculate total payment (sum of payment_total) from all accounts within the selected date range
+          const totalPayment = result.data.reduce((sum, row) => {
+            const payment = parseFloat(row.payment_total) || 0
+            return sum + payment
+          }, 0)
+          
+          console.log('Bank Account Rental - Total Payment:', totalPayment)
+          setBankAccountRental(totalPayment)
         } else {
           console.warn('Bank Account Rental - Invalid response:', {
             success: result.success,
@@ -608,7 +612,7 @@ export default function DashboardPage() {
           />
           <KPICard
             title="Bank Account Rental"
-            value={formatNumber(bankAccountRental)}
+            value={formatNumber(bankAccountRental, 2)}
             change={0}
             icon={CreditCard}
             trend="up"
