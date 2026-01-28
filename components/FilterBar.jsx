@@ -13,36 +13,49 @@ export default function FilterBar({ showCurrency = false, swapOrder = false }) {
   const [isCustomDateRangeOpen, setIsCustomDateRangeOpen] = useState(false)
   const [customStartDate, setCustomStartDate] = useState(null)
   const [customEndDate, setCustomEndDate] = useState(null)
-  const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 0, 24)) // January 2026
   const [selectingStart, setSelectingStart] = useState(true)
   const monthDropdownRef = useRef(null)
   const currencyDropdownRef = useRef(null)
   const customDateRangeRef = useRef(null)
 
+  // Use consistent reference date (January 24, 2026) instead of system date
+  const getReferenceDate = () => {
+    return new Date(2026, 0, 24) // January 24, 2026
+  }
+
   // Get current label based on selected month
   const getCurrentLabel = () => {
-    const now = new Date()
+    const now = getReferenceDate()
     const yesterday = subDays(now, 1)
     const lastMonth = subMonths(now, 1)
     
-    if (format(selectedMonth.start, 'yyyy-MM-dd') === format(startOfDay(yesterday), 'yyyy-MM-dd') && 
-        format(selectedMonth.end, 'yyyy-MM-dd') === format(endOfDay(yesterday), 'yyyy-MM-dd')) {
+    // Convert selectedMonth dates to Date objects if they're strings
+    const startDate = selectedMonth.start instanceof Date 
+      ? selectedMonth.start 
+      : new Date(selectedMonth.start)
+    const endDate = selectedMonth.end instanceof Date 
+      ? selectedMonth.end 
+      : new Date(selectedMonth.end)
+    
+    if (format(startDate, 'yyyy-MM-dd') === format(startOfDay(yesterday), 'yyyy-MM-dd') && 
+        format(endDate, 'yyyy-MM-dd') === format(endOfDay(yesterday), 'yyyy-MM-dd')) {
       return 'Yesterday'
     }
-    if (format(selectedMonth.start, 'yyyy-MM-dd') === format(startOfMonth(lastMonth), 'yyyy-MM-dd') && 
-        format(selectedMonth.end, 'yyyy-MM-dd') === format(endOfMonth(lastMonth), 'yyyy-MM-dd')) {
+    if (format(startDate, 'yyyy-MM-dd') === format(startOfMonth(lastMonth), 'yyyy-MM-dd') && 
+        format(endDate, 'yyyy-MM-dd') === format(endOfMonth(lastMonth), 'yyyy-MM-dd')) {
       return 'Last Month'
     }
-    if (format(selectedMonth.start, 'yyyy-MM-dd') === format(startOfMonth(now), 'yyyy-MM-dd') && 
-        format(selectedMonth.end, 'yyyy-MM-dd') === format(endOfMonth(now), 'yyyy-MM-dd')) {
+    if (format(startDate, 'yyyy-MM-dd') === format(startOfMonth(now), 'yyyy-MM-dd') && 
+        format(endDate, 'yyyy-MM-dd') === format(endOfMonth(now), 'yyyy-MM-dd')) {
       return 'This Month'
     }
     // Custom date range
-    return `${format(selectedMonth.start, 'MMM d')} - ${format(selectedMonth.end, 'MMM d, yyyy')}`
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`
   }
 
   const handleDateRangeSelect = (type) => {
-    const now = new Date()
+    const now = getReferenceDate() // Use consistent reference date
     let start, end, label
 
     switch (type) {
@@ -303,7 +316,7 @@ export default function FilterBar({ showCurrency = false, swapOrder = false }) {
                   const isStart = isDateStart(date)
                   const isEnd = isDateEnd(date)
                   const isCurrentMonth = isSameMonth(date, currentMonth)
-                  const isToday = isSameDay(date, new Date())
+                  const isToday = isSameDay(date, getReferenceDate())
 
                   return (
                     <button
@@ -394,10 +407,12 @@ export default function FilterBar({ showCurrency = false, swapOrder = false }) {
       {swapOrder ? (
         <>
           {currencyButton}
+          {monthButton}
           {customDateRangeButton}
         </>
       ) : (
         <>
+          {monthButton}
           {customDateRangeButton}
           {currencyButton}
         </>

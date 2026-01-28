@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useState, useRef, useEffect } from 'react'
-import { signIn } from 'next-auth/react'
+import { login } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/lib/toast-context'
 import { ArrowRight, TrendingUp, Shield, BarChart3, Zap, Users, CreditCard, Activity, X } from 'lucide-react'
@@ -52,16 +52,9 @@ export default function LandingPage() {
     setLoading(true)
 
     try {
-      const result = await signIn('credentials', {
-        username,
-        password,
-        redirect: false,
-      })
+      const result = await login(username, password)
 
-      if (result?.error) {
-        setError('Invalid credentials')
-        showToast('Login failed. Please check your credentials.', 'error')
-      } else if (result?.ok) {
+      if (result?.success) {
         localStorage.setItem('showLoginSuccessToast', 'true')
         setIsLoginModalOpen(false)
         await new Promise(resolve => setTimeout(resolve, 500))
@@ -71,8 +64,8 @@ export default function LandingPage() {
         showToast('Login failed. Please try again.', 'error')
       }
     } catch (err) {
-      setError('An error occurred. Please try again.')
-      showToast('An error occurred. Please try again.', 'error')
+      setError(err.message || 'Invalid credentials')
+      showToast(err.message || 'Login failed. Please check your credentials.', 'error')
     } finally {
       setLoading(false)
     }

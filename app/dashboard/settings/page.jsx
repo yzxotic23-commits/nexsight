@@ -2,15 +2,25 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useSession, signOut } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { useForm } from 'react-hook-form'
 import { useToast } from '@/lib/toast-context'
 import { Search, Bell, HelpCircle, Settings, User, ChevronDown, UserCircle, Users, FileText, ArrowLeft, Edit, Trash2, Eye, EyeOff, Calendar, Download, Filter, Shield, Check, Lightbulb, Lock, Clock, ChevronRight, X, Fingerprint, Key, Pencil, Power, Globe, Building2 } from 'lucide-react'
 import ThemeToggle from '@/components/ThemeToggle'
 import Link from 'next/link'
+import { 
+  fetchBrandMarketMappings, 
+  createBrandMarketMapping, 
+  updateBrandMarketMapping, 
+  deleteBrandMarketMapping,
+  fetchUsers,
+  createUser,
+  updateUser,
+  deleteUser
+} from '@/lib/utils/supabase-helpers'
 
 export default function SettingsPage() {
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { showToast } = useToast()
   const [activeMenu, setActiveMenu] = useState('General')
   const [showPassword, setShowPassword] = useState(false)
@@ -37,23 +47,20 @@ export default function SettingsPage() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false)
   const userDropdownRef = useRef(null)
-  const [usersList, setUsersList] = useState([
-    { id: 1, name: 'John Doe', email: 'john.doe@example.com', role: 'Admin', status: 'Active', lastLogin: '2 hours ago' },
-    { id: 2, name: 'Jane Smith', email: 'jane.smith@example.com', role: 'User', status: 'Active', lastLogin: '1 day ago' },
-    { id: 3, name: 'Bob Johnson', email: 'bob.johnson@example.com', role: 'Manager', status: 'Active', lastLogin: '3 days ago' },
-    { id: 4, name: 'Alice Williams', email: 'alice.williams@example.com', role: 'User', status: 'Inactive', lastLogin: '1 week ago' },
-    { id: 5, name: 'Charlie Brown', email: 'charlie.brown@example.com', role: 'User', status: 'Active', lastLogin: '5 hours ago' },
-    { id: 6, name: 'Diana Prince', email: 'diana.prince@example.com', role: 'Admin', status: 'Active', lastLogin: '1 hour ago' },
-  ])
+  // User Management - Now using Supabase
+  const [usersList, setUsersList] = useState([])
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false)
 
   // Initialize profile data from session
   useEffect(() => {
-    setProfileData({
-      fullName: session?.user?.name || 'Martin Septimus',
-      email: session?.user?.email || 'admin@example.com',
-      username: session?.user?.username || 'admin',
-      bio: ''
-    })
+    if (session) {
+      setProfileData({
+        fullName: session.name || '',
+        email: session.email || '',
+        username: session.username || '',
+        bio: ''
+      })
+    }
   }, [session])
 
   // Close user dropdown when clicking outside
@@ -78,20 +85,54 @@ export default function SettingsPage() {
     { id: 'Activity Log', label: 'Activity Log', icon: FileText },
   ]
 
-  // Brand & Market mapping data
-  const [brandMarketMapping, setBrandMarketMapping] = useState([
-    { id: 1, brand: 'Brand A', market: 'SGD', status: 'Active' },
-    { id: 2, brand: 'Brand B', market: 'MYR', status: 'Active' },
-    { id: 3, brand: 'Brand C', market: 'USC', status: 'Active' },
-    { id: 4, brand: 'Brand D', market: 'SGD', status: 'Active' },
-    { id: 5, brand: 'Brand E', market: 'MYR', status: 'Inactive' },
-    { id: 6, brand: 'Brand F', market: 'USC', status: 'Active' },
-  ])
+  // Brand & Market mapping data - Now using Supabase
+  const [brandMarketMapping, setBrandMarketMapping] = useState([])
   const [isEditMappingModalOpen, setIsEditMappingModalOpen] = useState(false)
   const [isAddMappingModalOpen, setIsAddMappingModalOpen] = useState(false)
   const [isDeleteMappingModalOpen, setIsDeleteMappingModalOpen] = useState(false)
   const [selectedMapping, setSelectedMapping] = useState(null)
   const [mappingSearch, setMappingSearch] = useState('')
+  const [isLoadingMappings, setIsLoadingMappings] = useState(false)
+
+  // Fetch brand market mappings from Supabase
+  useEffect(() => {
+    const loadMappings = async () => {
+      setIsLoadingMappings(true)
+      try {
+        const data = await fetchBrandMarketMappings()
+        setBrandMarketMapping(data)
+      } catch (error) {
+        console.error('Error loading brand market mappings:', error)
+        showToast('Failed to load brand market mappings', 'error')
+      } finally {
+        setIsLoadingMappings(false)
+      }
+    }
+
+    if (activeMenu === 'General') {
+      loadMappings()
+    }
+  }, [activeMenu, showToast])
+
+  // Fetch users from Supabase
+  useEffect(() => {
+    const loadUsers = async () => {
+      setIsLoadingUsers(true)
+      try {
+        const data = await fetchUsers()
+        setUsersList(data)
+      } catch (error) {
+        console.error('Error loading users:', error)
+        showToast('Failed to load users', 'error')
+      } finally {
+        setIsLoadingUsers(false)
+      }
+    }
+
+    if (activeMenu === 'User Management') {
+      loadUsers()
+    }
+  }, [activeMenu, showToast])
 
   // Use state for users list
   const users = usersList
@@ -173,22 +214,35 @@ export default function SettingsPage() {
 
                 {/* Mapping Table */}
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200 dark:border-gray-800">
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Brand</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Market</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Status</th>
-                        <th className="text-right py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {brandMarketMapping
-                        .filter(mapping => 
-                          mapping.brand.toLowerCase().includes(mappingSearch.toLowerCase()) ||
-                          mapping.market.toLowerCase().includes(mappingSearch.toLowerCase())
-                        )
-                        .map((mapping) => (
+                  {isLoadingMappings ? (
+                    <div className="text-center py-12">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+                      <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading mappings...</p>
+                    </div>
+                  ) : (
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-200 dark:border-gray-800">
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Brand</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Market</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                          <th className="text-right py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {brandMarketMapping.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="text-center py-12 text-gray-500 dark:text-gray-400">
+                              No brand market mappings found. Click "Add Mapping" to create one.
+                            </td>
+                          </tr>
+                        ) : (
+                          brandMarketMapping
+                            .filter(mapping => 
+                              mapping.brand.toLowerCase().includes(mappingSearch.toLowerCase()) ||
+                              mapping.market.toLowerCase().includes(mappingSearch.toLowerCase())
+                            )
+                            .map((mapping) => (
                           <tr key={mapping.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
                             <td className="py-3 px-4 text-sm text-gray-900 dark:text-white font-medium">{mapping.brand}</td>
                             <td className="py-3 px-4 text-sm text-gray-900 dark:text-white">{mapping.market}</td>
@@ -226,9 +280,11 @@ export default function SettingsPage() {
                               </div>
                             </td>
                           </tr>
-                        ))}
-                    </tbody>
-                  </table>
+                        ))
+                        )}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </div>
             )}
@@ -252,10 +308,10 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex-1">
                           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                            {session?.user?.name || 'Martin Septimus'}
+                            {session?.name || 'Admin User'}
                           </h3>
                           <p className="text-sm text-gray-500 dark:text-gray-400">
-                            {session?.user?.role || 'Admin'}
+                            {session?.role || 'Admin'}
                           </p>
                         </div>
                       </div>
@@ -338,12 +394,14 @@ export default function SettingsPage() {
                               onClick={() => {
                                 setIsEditingProfile(false)
                                 // Reset to original values
-                                setProfileData({
-                                  fullName: session?.user?.name || 'Martin Septimus',
-                                  email: session?.user?.email || 'admin@example.com',
-                                  username: session?.user?.username || 'admin',
-                                  bio: ''
-                                })
+                                if (session) {
+                                  setProfileData({
+                                    fullName: session.name || '',
+                                    email: session.email || '',
+                                    username: session.username || '',
+                                    bio: ''
+                                  })
+                                }
                               }}
                               className="px-6 py-2 bg-white dark:bg-dark-surface border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                             >
@@ -601,19 +659,35 @@ export default function SettingsPage() {
 
                   {/* Users Table */}
                   <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-800">
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Name</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Email</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Role</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Last Login</th>
-                          <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredUsers.map((user) => (
+                    {isLoadingUsers ? (
+                      <div className="text-center py-12">
+                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+                        <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading users...</p>
+                      </div>
+                    ) : (
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-200 dark:border-gray-800">
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Name</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Email</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Role</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Last Login</th>
+                            <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredUsers.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="text-center py-12 text-gray-500 dark:text-gray-400">
+                                {usersList.length === 0 
+                                  ? 'No users found. Click "Add User" to create one.'
+                                  : 'No users match your search criteria.'
+                                }
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredUsers.map((user) => (
                           <tr
                             key={user.id}
                             className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
@@ -646,30 +720,50 @@ export default function SettingsPage() {
                               <div className="flex items-center justify-end gap-2">
                                 <button 
                                   onClick={() => {
+                                    if (user.username === 'admin') {
+                                      showToast('Default admin user cannot be edited', 'error')
+                                      return
+                                    }
                                     setSelectedUser(user)
                                     setIsEditUserModalOpen(true)
                                   }}
-                                  className="p-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                  title="Edit User"
+                                  disabled={user.username === 'admin'}
+                                  className={`p-2 rounded-lg transition-colors ${
+                                    user.username === 'admin'
+                                      ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50'
+                                      : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                                  }`}
+                                  title={user.username === 'admin' ? 'Default admin cannot be edited' : 'Edit User'}
                                 >
                                   <Edit className="w-4 h-4" />
                                 </button>
                                 <button 
                                   onClick={() => {
+                                    if (user.username === 'admin') {
+                                      showToast('Default admin user cannot be deleted', 'error')
+                                      return
+                                    }
                                     setSelectedUser(user)
                                     setIsDeleteUserModalOpen(true)
                                   }}
-                                  className="p-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                  title="Delete User"
+                                  disabled={user.username === 'admin'}
+                                  className={`p-2 rounded-lg transition-colors ${
+                                    user.username === 'admin'
+                                      ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50'
+                                      : 'text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                  }`}
+                                  title={user.username === 'admin' ? 'Default admin cannot be deleted' : 'Delete User'}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        ))
+                          )}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </div>
               </div>
@@ -926,10 +1020,23 @@ export default function SettingsPage() {
               onClose={() => setIsAddUserModalOpen(false)}
               showPassword={showAddUserPassword}
               setShowPassword={setShowAddUserPassword}
-              onSuccess={(newUser) => {
-                setUsersList([...usersList, { ...newUser, id: Math.max(...usersList.map(u => u.id)) + 1 }])
-                setIsAddUserModalOpen(false)
-                showToast(`User "${newUser.fullName}" added successfully!`, 'success')
+              onSuccess={async (newUser) => {
+                try {
+                  const createdUser = await createUser({
+                    fullName: newUser.fullName,
+                    email: newUser.email,
+                    username: newUser.username,
+                    password: newUser.password,
+                    role: newUser.role,
+                    status: newUser.status,
+                    created_by: session?.name || 'admin'
+                  })
+                  setUsersList([createdUser, ...usersList])
+                  setIsAddUserModalOpen(false)
+                  showToast(`User "${newUser.fullName}" added successfully!`, 'success')
+                } catch (error) {
+                  showToast(error.message || 'Failed to add user', 'error')
+                }
               }}
             />
           </div>
@@ -949,11 +1056,32 @@ export default function SettingsPage() {
               }}
               showPassword={showAddUserPassword}
               setShowPassword={setShowAddUserPassword}
-              onSuccess={(updatedUser) => {
-                setUsersList(usersList.map(u => u.id === updatedUser.id ? updatedUser : u))
-                setIsEditUserModalOpen(false)
-                setSelectedUser(null)
-                showToast(`User "${updatedUser.name}" updated successfully!`, 'success')
+              onSuccess={async (updatedUser) => {
+                try {
+                  // Check if trying to edit admin user
+                  if (updatedUser.username === 'admin' || selectedUser?.username === 'admin') {
+                    showToast('Default admin user cannot be edited', 'error')
+                    setIsEditUserModalOpen(false)
+                    setSelectedUser(null)
+                    return
+                  }
+                  
+                  const userData = await updateUser(updatedUser.id, {
+                    fullName: updatedUser.name,
+                    email: updatedUser.email,
+                    username: updatedUser.username || updatedUser.email.split('@')[0],
+                    password: updatedUser.password || undefined, // Only update if password provided
+                    role: updatedUser.role,
+                    status: updatedUser.status,
+                    updated_by: session?.name || 'admin'
+                  })
+                  setUsersList(usersList.map(u => u.id === updatedUser.id ? userData : u))
+                  setIsEditUserModalOpen(false)
+                  setSelectedUser(null)
+                  showToast(`User "${updatedUser.name}" updated successfully!`, 'success')
+                } catch (error) {
+                  showToast(error.message || 'Failed to update user', 'error')
+                }
               }}
             />
           </div>
@@ -998,12 +1126,27 @@ export default function SettingsPage() {
                 Cancel
               </button>
                 <button
-                  onClick={() => {
-                    const userName = selectedUser.name
-                    setUsersList(usersList.filter(u => u.id !== selectedUser.id))
-                    setIsDeleteUserModalOpen(false)
-                    showToast(`User "${userName}" deleted successfully!`, 'success')
-                    setSelectedUser(null)
+                  onClick={async () => {
+                    if (!selectedUser) return
+                    
+                    // Check if trying to delete admin user
+                    if (selectedUser.username === 'admin') {
+                      showToast('Default admin user cannot be deleted', 'error')
+                      setIsDeleteUserModalOpen(false)
+                      setSelectedUser(null)
+                      return
+                    }
+                    
+                    try {
+                      const userName = selectedUser.name
+                      await deleteUser(selectedUser.id)
+                      setUsersList(usersList.filter(u => u.id !== selectedUser.id))
+                      setIsDeleteUserModalOpen(false)
+                      showToast(`User "${userName}" deleted successfully!`, 'success')
+                      setSelectedUser(null)
+                    } catch (error) {
+                      showToast(error.message || 'Failed to delete user', 'error')
+                    }
                   }}
                 className="px-6 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors"
               >
@@ -1075,25 +1218,32 @@ export default function SettingsPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const brandInput = document.getElementById('newBrand')
                     const marketInput = document.getElementById('newMarket')
                     const statusInput = document.getElementById('newStatus')
                     
                     if (brandInput?.value && marketInput?.value) {
-                      const newId = Math.max(...brandMarketMapping.map(m => m.id), 0) + 1
-                      const brandName = brandInput.value
-                      setBrandMarketMapping([
-                        ...brandMarketMapping,
-                        {
-                          id: newId,
+                      try {
+                        const brandName = brandInput.value.trim()
+                        const newMapping = await createBrandMarketMapping({
                           brand: brandName,
                           market: marketInput.value,
-                          status: statusInput?.value || 'Active'
-                        }
-                      ])
-                      showToast(`${brandName} added successfully`, 'success')
-                      setIsAddMappingModalOpen(false)
+                          status: statusInput?.value || 'Active',
+                          created_by: session?.name || 'admin'
+                        })
+                        
+                        setBrandMarketMapping([newMapping, ...brandMarketMapping])
+                        showToast(`${brandName} added successfully`, 'success')
+                        setIsAddMappingModalOpen(false)
+                        
+                        // Reset form
+                        brandInput.value = ''
+                        marketInput.value = ''
+                        statusInput.value = 'Active'
+                      } catch (error) {
+                        showToast(error.message || 'Failed to add brand market mapping', 'error')
+                      }
                     } else {
                       showToast('Please fill in all required fields', 'error')
                     }
@@ -1176,25 +1326,29 @@ export default function SettingsPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const brandInput = document.getElementById('editBrand')
                     const marketInput = document.getElementById('editMarket')
                     const statusInput = document.getElementById('editStatus')
                     
-                    if (brandInput?.value && marketInput?.value) {
-                      setBrandMarketMapping(brandMarketMapping.map(m => 
-                        m.id === selectedMapping.id
-                          ? {
-                              ...m,
-                              brand: brandInput.value,
-                              market: marketInput.value,
-                              status: statusInput?.value || 'Active'
-                            }
-                          : m
-                      ))
-                      showToast('Mapping updated successfully', 'success')
-                      setIsEditMappingModalOpen(false)
-                      setSelectedMapping(null)
+                    if (brandInput?.value && marketInput?.value && selectedMapping) {
+                      try {
+                        const updatedMapping = await updateBrandMarketMapping(selectedMapping.id, {
+                          brand: brandInput.value.trim(),
+                          market: marketInput.value,
+                          status: statusInput?.value || 'Active',
+                          updated_by: session?.name || 'admin'
+                        })
+                        
+                        setBrandMarketMapping(brandMarketMapping.map(m => 
+                          m.id === selectedMapping.id ? updatedMapping : m
+                        ))
+                        showToast('Mapping updated successfully', 'success')
+                        setIsEditMappingModalOpen(false)
+                        setSelectedMapping(null)
+                      } catch (error) {
+                        showToast(error.message || 'Failed to update mapping', 'error')
+                      }
                     } else {
                       showToast('Please fill in all required fields', 'error')
                     }
@@ -1242,12 +1396,19 @@ export default function SettingsPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    const brandName = selectedMapping.brand
-                    setBrandMarketMapping(brandMarketMapping.filter(m => m.id !== selectedMapping.id))
-                    showToast(`${brandName} deleted successfully`, 'success')
-                    setIsDeleteMappingModalOpen(false)
-                    setSelectedMapping(null)
+                  onClick={async () => {
+                    if (!selectedMapping) return
+                    
+                    try {
+                      const brandName = selectedMapping.brand
+                      await deleteBrandMarketMapping(selectedMapping.id)
+                      setBrandMarketMapping(brandMarketMapping.filter(m => m.id !== selectedMapping.id))
+                      showToast(`${brandName} deleted successfully`, 'success')
+                      setIsDeleteMappingModalOpen(false)
+                      setSelectedMapping(null)
+                    } catch (error) {
+                      showToast(error.message || 'Failed to delete mapping', 'error')
+                    }
                   }}
                   className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors"
                 >
@@ -1267,9 +1428,9 @@ export default function SettingsPage() {
 function EditUserForm({ user, onClose, showPassword, setShowPassword, onSuccess }) {
   const { register, handleSubmit, formState: { errors } } = useForm({
     defaultValues: {
-      fullName: user.name,
+      fullName: user.name || user.fullName,
       email: user.email,
-      username: user.email.split('@')[0], // Extract username from email as default
+      username: user.username || (user.email ? user.email.split('@')[0] : ''),
       role: user.role,
       status: user.status,
     }
@@ -1280,13 +1441,16 @@ function EditUserForm({ user, onClose, showPassword, setShowPassword, onSuccess 
     if (onSuccess) {
       onSuccess({
         ...user,
+        id: user.id,
         name: data.fullName,
         email: data.email,
+        username: data.username,
         role: data.role,
         status: data.status,
+        password: data.password || undefined, // Only include if provided
       })
     }
-    onClose()
+    // Don't close here, let parent handle it after API call
   }
 
   return (

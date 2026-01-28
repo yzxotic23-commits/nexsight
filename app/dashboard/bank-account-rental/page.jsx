@@ -9,7 +9,7 @@ import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
 import ThemeToggle from '@/components/ThemeToggle'
-import { useSession, signOut } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Users, TrendingUp, Search, Bell, HelpCircle, Settings, User, ChevronDown, Power, Filter, Plus, Trash2, Save, X, Eye, ChevronLeft, ChevronRight, CreditCard, DollarSign, Wallet } from 'lucide-react'
@@ -35,7 +35,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function WealthAccountPage() {
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { selectedMonth } = useFilterStore()
   const { wealthAccountData, setWealthAccountData } = useDashboardStore()
   const { showToast } = useToast()
@@ -47,217 +47,151 @@ export default function WealthAccountPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [rowToView, setRowToView] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 10
+  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const saveTimerRef = useRef(null)
   
   const tabs = ['SGD', 'MYR', 'USC']
+  const itemsPerPageOptions = [10, 20, 50, 100, 200]
 
-  // State for bank rent table data
-  const [bankRentData, setBankRentData] = useState([
-    {
-      id: 1,
-      supplier: 'WEALTH+',
-      bankAccountName: 'ANJANA DEVI D/O VIJAYAN (LIQUIDPAY)',
-      status: 'ACTIVE',
-      department: 'WEALTH+',
-      sellOff: 'OFF',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '200.00',
-      commission: '150.00',
-      markup: '450.00',
-      sales: '800.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '350.00'
-    },
-    {
-      id: 2,
-      supplier: 'WEALTH+',
-      bankAccountName: 'TRISTAN LOW (MARI)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '200.00',
-      commission: '150.00',
-      markup: '',
-      sales: '350.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '350.00'
-    },
-    {
-      id: 3,
-      supplier: 'WEALTH+',
-      bankAccountName: 'DAYANG NADIRA BINTE ISMAIL (DBS)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '500.00',
-      commission: '200.00',
-      markup: '',
-      sales: '700.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '700.00'
-    },
-    {
-      id: 4,
-      supplier: 'WEALTH+',
-      bankAccountName: 'MOHAMAD FAZLI BIN MOHAMAD (OCBC)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '200.00',
-      commission: '150.00',
-      markup: '',
-      sales: '350.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '350.00'
-    },
-    {
-      id: 5,
-      supplier: 'WEALTH+',
-      bankAccountName: 'NURUL AIN BINTE MOHAMAD (UOB)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '500.00',
-      commission: '200.00',
-      markup: '',
-      sales: '700.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '700.00'
-    },
-    {
-      id: 6,
-      supplier: 'WEALTH+',
-      bankAccountName: 'AHMAD ZAKI BIN ABDULLAH (DBS)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '200.00',
-      commission: '150.00',
-      markup: '',
-      sales: '350.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '350.00'
-    },
-    {
-      id: 7,
-      supplier: 'WEALTH+',
-      bankAccountName: 'SITI NURHALIZA BINTE MOHAMAD (OCBC)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '500.00',
-      commission: '200.00',
-      markup: '',
-      sales: '700.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '700.00'
-    },
-    {
-      id: 8,
-      supplier: 'WEALTH+',
-      bankAccountName: 'MOHAMAD HAFIZ BIN ISMAIL (UOB)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '200.00',
-      commission: '150.00',
-      markup: '',
-      sales: '350.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '350.00'
-    },
-    {
-      id: 9,
-      supplier: 'WEALTH+',
-      bankAccountName: 'NURUL SYAFIQAH BINTE ABDULLAH (DBS)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '900.00',
-      commission: '300.00',
-      markup: '',
-      sales: '1,200.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '1,200.00'
-    },
-    {
-      id: 10,
-      supplier: 'WEALTH+',
-      bankAccountName: 'MOHAMAD FAISAL BIN MOHAMAD (OCBC)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '500.00',
-      commission: '200.00',
-      markup: '',
-      sales: '700.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '700.00'
-    },
-    {
-      id: 11,
-      supplier: 'WEALTH+',
-      bankAccountName: 'NURUL AISYAH BINTE ISMAIL (UOB)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '200.00',
-      commission: '150.00',
-      markup: '',
-      sales: '350.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '350.00'
-    },
-    {
-      id: 12,
-      supplier: 'WEALTH+',
-      bankAccountName: 'MOHAMAD HAZIQ BIN ABDULLAH (DBS)',
-      status: 'ACTIVE',
-      department: 'NP_INT_SGD',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: 'SGD',
-      rentalCommission: '500.00',
-      commission: '200.00',
-      markup: '',
-      sales: '700.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '700.00'
+  // State for bank rent table data from Supabase
+  const [bankRentData, setBankRentData] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  // State for Bank Owner table
+  const [bankOwnerData, setBankOwnerData] = useState([])
+  const [bankOwnerLoading, setBankOwnerLoading] = useState(true)
+  
+  // State for selected month for Bank Owner table (default: current month)
+  const getCurrentMonth = () => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  }
+  const [selectedBankOwnerMonth, setSelectedBankOwnerMonth] = useState(getCurrentMonth())
+
+  // Fetch bank price data from Supabase
+  useEffect(() => {
+    async function fetchBankPriceData() {
+      setLoading(true)
+      try {
+        console.log('Fetching bank price data for currency:', selectedMarket)
+        
+        const response = await fetch(`/api/bank-price?currency=${selectedMarket}`)
+        const result = await response.json()
+        
+        console.log('Bank price API response:', result)
+        
+        if (result.success) {
+          // Map Supabase data to match component's expected format
+          const mappedData = result.data.map(item => ({
+            id: item.id,
+            supplier: item.supplier || 'WEALTH+',
+            bankAccountName: item.bank_account_name || '',
+            status: item.status || 'ACTIVE',
+            department: item.department || '',
+            sellOff: item.sell_off || '',
+            startDate: item.start_date 
+              ? (typeof item.start_date === 'string' 
+                  ? item.start_date.split('T')[0] 
+                  : item.start_date instanceof Date
+                    ? item.start_date.toISOString().split('T')[0]
+                    : item.start_date)
+              : '',
+            currency: item.currency || selectedMarket,
+            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+            addition: item.addition || '',
+            remark: item.remark || '',
+            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+            createdAt: item.created_at // Add created_at for sorting
+          }))
+          
+          // Sort by created_at DESC so newest rows appear at top
+          mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          
+          console.log(`Loaded ${mappedData.length} bank price records`)
+          setBankRentData(mappedData)
+        } else {
+          showToast('Failed to load bank price data', 'error')
+          setBankRentData([])
+        }
+      } catch (error) {
+        console.error('Error fetching bank price data:', error)
+        showToast('Error loading bank price data', 'error')
+        setBankRentData([])
+      } finally {
+        setLoading(false)
+      }
     }
-  ])
+    
+    fetchBankPriceData()
+  }, [selectedMarket, showToast])
+
+  // Fetch bank owner data from Supabase (only for SGD)
+  useEffect(() => {
+    // Only fetch if selectedMarket is SGD
+    if (selectedMarket !== 'SGD') {
+      setBankOwnerData([])
+      setBankOwnerLoading(false)
+      return
+    }
+
+    async function fetchBankOwnerData() {
+      setBankOwnerLoading(true)
+      try {
+        console.log('Fetching bank owner data for month:', selectedBankOwnerMonth)
+        
+        const response = await fetch(`/api/bank-owner?month=${selectedBankOwnerMonth}`)
+        const result = await response.json()
+        
+        console.log('Bank owner API response:', result)
+        
+        if (result.success) {
+          if (result.data && result.data.length > 0) {
+            // Map Supabase data to match component's expected format
+            const mappedData = result.data.map(item => ({
+              id: item.id,
+              particular: item.particular || 'Bank Owner',
+              dates: item.date_values || {},
+              month: item.month,
+              total: item.total || 0
+            }))
+            setBankOwnerData(mappedData)
+          } else {
+            // If no data exists, create default row
+            setBankOwnerData([{
+              id: null,
+              particular: 'Bank Owner',
+              dates: {},
+              month: selectedBankOwnerMonth
+            }])
+          }
+        } else {
+          showToast('Failed to load bank owner data', 'error')
+          setBankOwnerData([{
+            id: null,
+            particular: 'Bank Owner',
+            dates: {},
+            month: selectedBankOwnerMonth
+          }])
+        }
+      } catch (error) {
+        console.error('Error fetching bank owner data:', error)
+        showToast('Error loading bank owner data', 'error')
+        setBankOwnerData([{
+          id: null,
+          particular: 'Bank Owner',
+          dates: {},
+          month: selectedBankOwnerMonth
+        }])
+      } finally {
+        setBankOwnerLoading(false)
+      }
+    }
+    
+    fetchBankOwnerData()
+  }, [selectedBankOwnerMonth, selectedMarket, showToast])
 
   // Function to calculate payment total
   const calculatePaymentTotal = (rentalCommission, commission) => {
@@ -270,26 +204,83 @@ export default function WealthAccountPage() {
   }
 
   // Function to add new row
-  const addNewRow = () => {
-    const newRow = {
-      id: Date.now(),
-      supplier: 'WEALTH+',
-      bankAccountName: '',
-      status: 'ACTIVE',
-      department: selectedMarket === 'SGD' ? 'NP_INT_SGD' : selectedMarket === 'MYR' ? 'NP_INT_MYR' : 'NP_INT_USC',
-      sellOff: '',
-      startDate: '1-Jan',
-      currency: selectedMarket,
-      rentalCommission: '0.00',
-      commission: '0.00',
-      markup: '',
-      sales: '0.00',
-      addition: '',
-      remark: '',
-      paymentTotal: '0.00'
+  const addNewRow = async () => {
+    try {
+      // Get current date in YYYY-MM-DD format for date input
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const startDate = `${year}-${month}-${day}`
+      
+      const newRow = {
+        supplier: 'WEALTH+',
+        bank_account_name: '',
+        status: 'ACTIVE',
+        department: selectedMarket === 'SGD' ? 'NP_INT_SGD' : selectedMarket === 'MYR' ? 'NP_INT_MYR' : 'NP_INT_USC',
+        sell_off: '',
+        start_date: startDate, // Auto-generated from current date (YYYY-MM-DD format)
+        currency: selectedMarket,
+        rental_commission: 0.00,
+        commission: 0.00,
+        markup: null,
+        sales: null,
+        addition: '',
+        remark: '',
+        created_by: session?.name || 'System',
+        updated_by: session?.name || 'System'
+      }
+
+      const response = await fetch('/api/bank-price', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRow)
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        showToast('New row added successfully', 'success')
+        // Refresh data
+        const fetchResponse = await fetch(`/api/bank-price?currency=${selectedMarket}`)
+        const fetchResult = await fetchResponse.json()
+        
+        if (fetchResult.success) {
+          const mappedData = fetchResult.data.map(item => ({
+            id: item.id,
+            supplier: item.supplier || 'WEALTH+',
+            bankAccountName: item.bank_account_name || '',
+            status: item.status || 'ACTIVE',
+            department: item.department || '',
+            sellOff: item.sell_off || '',
+            startDate: item.start_date 
+              ? (typeof item.start_date === 'string' 
+                  ? item.start_date.split('T')[0] 
+                  : item.start_date instanceof Date
+                    ? item.start_date.toISOString().split('T')[0]
+                    : item.start_date)
+              : '',
+            currency: item.currency || selectedMarket,
+            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+            addition: item.addition || '',
+            remark: item.remark || '',
+            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+            createdAt: item.created_at // Add created_at for sorting
+          }))
+          // Sort by created_at DESC so newest rows appear at top
+          mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          setBankRentData(mappedData)
+        }
+      } else {
+        showToast('Failed to add new row', 'error')
+      }
+    } catch (error) {
+      console.error('Error adding new row:', error)
+      showToast('Error adding new row', 'error')
     }
-    setBankRentData([...bankRentData, newRow])
-    showToast('New row added', 'success')
   }
 
   // Function to open delete confirmation modal
@@ -317,29 +308,130 @@ export default function WealthAccountPage() {
   }, [bankRentData.length, currentPage, itemsPerPage, selectedMarket])
 
   // Function to delete row after confirmation
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (rowToDelete) {
-      setBankRentData(bankRentData.filter(row => row.id !== rowToDelete.id))
-      showToast('Row deleted successfully', 'success')
-      setIsDeleteModalOpen(false)
-      setRowToDelete(null)
+      try {
+        const response = await fetch(`/api/bank-price?id=${rowToDelete.id}`, {
+          method: 'DELETE'
+        })
+
+        const result = await response.json()
+
+        if (result.success) {
+          showToast('Row deleted successfully', 'success')
+          // Refresh data
+          const fetchResponse = await fetch(`/api/bank-price?currency=${selectedMarket}`)
+          const fetchResult = await fetchResponse.json()
+          
+          if (fetchResult.success) {
+            const mappedData = fetchResult.data.map(item => ({
+              id: item.id,
+              supplier: item.supplier || 'WEALTH+',
+              bankAccountName: item.bank_account_name || '',
+              status: item.status || 'ACTIVE',
+              department: item.department || '',
+              sellOff: item.sell_off || '',
+              startDate: item.start_date 
+              ? (typeof item.start_date === 'string' 
+                  ? item.start_date.split('T')[0] 
+                  : item.start_date instanceof Date
+                    ? item.start_date.toISOString().split('T')[0]
+                    : item.start_date)
+              : '',
+              currency: item.currency || selectedMarket,
+              rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+              commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+              markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+              sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+              addition: item.addition || '',
+              remark: item.remark || '',
+              paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+              createdAt: item.created_at
+            }))
+            // Sort by created_at DESC
+            mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            setBankRentData(mappedData)
+          }
+        } else {
+          showToast('Failed to delete row', 'error')
+        }
+      } catch (error) {
+        console.error('Error deleting row:', error)
+        showToast('Error deleting row', 'error')
+      } finally {
+        setIsDeleteModalOpen(false)
+        setRowToDelete(null)
+      }
     }
   }
 
   // Function to save row to database
   const saveRow = async (row) => {
     try {
-      // TODO: Implement API call to save to database
-      // const response = await fetch('/api/bank-rent', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(row)
-      // })
-      // if (!response.ok) throw new Error('Failed to save')
-      
-      // For now, just show success message
-      showToast('Row saved successfully', 'success')
-      console.log('Saving row to database:', row)
+      const updateData = {
+        id: row.id,
+        supplier: row.supplier,
+        bank_account_name: row.bankAccountName,
+        status: row.status,
+        department: row.department,
+        sell_off: row.sellOff,
+        start_date: row.startDate,
+        currency: row.currency,
+        rental_commission: parseFloat(String(row.rentalCommission).replace(/,/g, '')) || 0,
+        commission: parseFloat(String(row.commission).replace(/,/g, '')) || 0,
+        markup: row.markup ? parseFloat(String(row.markup).replace(/,/g, '')) : null,
+        sales: row.sales ? parseFloat(String(row.sales).replace(/,/g, '')) : null,
+        addition: row.addition,
+        remark: row.remark,
+        updated_by: session?.name || 'System'
+      }
+
+      const response = await fetch('/api/bank-price', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        showToast('Row saved successfully', 'success')
+        // Refresh data
+        const fetchResponse = await fetch(`/api/bank-price?currency=${selectedMarket}`)
+        const fetchResult = await fetchResponse.json()
+        
+        if (fetchResult.success) {
+          const mappedData = fetchResult.data.map(item => ({
+            id: item.id,
+            supplier: item.supplier || 'WEALTH+',
+            bankAccountName: item.bank_account_name || '',
+            status: item.status || 'ACTIVE',
+            department: item.department || '',
+            sellOff: item.sell_off || '',
+            startDate: item.start_date 
+              ? (typeof item.start_date === 'string' 
+                  ? item.start_date.split('T')[0] 
+                  : item.start_date instanceof Date
+                    ? item.start_date.toISOString().split('T')[0]
+                    : item.start_date)
+              : '',
+            currency: item.currency || selectedMarket,
+            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+            addition: item.addition || '',
+            remark: item.remark || '',
+            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+            createdAt: item.created_at
+          }))
+          // Sort by created_at DESC
+          mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          setBankRentData(mappedData)
+        }
+      } else {
+        showToast('Failed to save row', 'error')
+      }
     } catch (error) {
       showToast('Failed to save row', 'error')
       console.error('Error saving row:', error)
@@ -362,6 +454,156 @@ export default function WealthAccountPage() {
       }
       return row
     }))
+  }
+
+  // Function to get days in selected month
+  const getDaysInMonth = (yearMonth) => {
+    const [year, month] = yearMonth.split('-').map(Number)
+    return new Date(year, month, 0).getDate()
+  }
+
+  // Function to generate date headers (01 Jan, 02 Jan, etc.)
+  const generateDateHeaders = (yearMonth) => {
+    const [year, month] = yearMonth.split('-').map(Number)
+    const daysInMonth = getDaysInMonth(yearMonth)
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const monthName = monthNames[month - 1]
+    
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = String(i + 1).padStart(2, '0')
+      return {
+        key: `${day}-${monthName}`,
+        label: `${day} ${monthName}`
+      }
+    })
+  }
+
+  // Function to calculate total for Bank Owner row
+  const calculateBankOwnerTotal = (row) => {
+    const dateHeaders = generateDateHeaders(selectedBankOwnerMonth)
+    let total = 0
+    
+    dateHeaders.forEach(dateHeader => {
+      const value = row.dates[dateHeader.key] || ''
+      if (value && value !== '-') {
+        const numValue = parseFloat(String(value).replace(/,/g, '')) || 0
+        total += numValue
+      }
+    })
+    
+    // Format with 2 decimal places
+    return total.toFixed(2)
+  }
+
+  // Function to save Bank Owner data to Supabase (upsert)
+  const saveBankOwnerData = async (row) => {
+    try {
+      const saveData = {
+        particular: row.particular || 'Bank Owner',
+        month: selectedBankOwnerMonth,
+        currency: 'SGD', // Always SGD for Bank Owner
+        date_values: row.dates || {},
+        updated_by: session?.name || 'System'
+      }
+
+      // If row has id, include it for update, otherwise it will be created
+      if (row.id) {
+        saveData.id = row.id
+      } else {
+        saveData.created_by = session?.name || 'System'
+      }
+
+      // Use POST with upsert (handles both insert and update)
+      const response = await fetch('/api/bank-owner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(saveData)
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        // Update local state with saved data
+        setBankOwnerData(prevData => prevData.map(r => {
+          if (r.id === row.id || (!r.id && !row.id)) {
+            return {
+              id: result.data.id,
+              particular: result.data.particular,
+              dates: result.data.date_values || {},
+              month: result.data.month,
+              total: result.data.total || 0
+            }
+          }
+          return r
+        }))
+        return true
+      } else {
+        showToast('Failed to save bank owner data', 'error')
+        return false
+      }
+    } catch (error) {
+      console.error('Error saving bank owner data:', error)
+      showToast('Error saving bank owner data', 'error')
+      return false
+    }
+  }
+
+  // Function to update Bank Owner cell value (with auto-save)
+  const updateBankOwnerCell = (id, dateKey, value) => {
+    // Update local state immediately for responsive UI
+    setBankOwnerData(prevData => {
+      const updatedData = prevData.map(row => {
+        // Match by id, or if id is null, match the first row without id
+        if (row.id === id || (id === null && !row.id)) {
+          return { ...row, dates: { ...row.dates, [dateKey]: value } }
+        }
+        return row
+      })
+      
+      // Clear previous timer
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+      }
+      
+      // Save to Supabase after 1 second of no changes
+      const rowToSave = updatedData.find(r => r.id === id || (id === null && !r.id))
+      if (rowToSave) {
+        saveTimerRef.current = setTimeout(() => {
+          saveBankOwnerData(rowToSave)
+        }, 1000)
+      }
+      
+      return updatedData
+    })
+  }
+
+  // Function to update Bank Owner particular (with auto-save)
+  const updateBankOwnerParticular = (id, value) => {
+    // Update local state immediately
+    setBankOwnerData(prevData => {
+      const updatedData = prevData.map(row => {
+        // Match by id, or if id is null, match the first row without id
+        if (row.id === id || (id === null && !row.id)) {
+          return { ...row, particular: value }
+        }
+        return row
+      })
+      
+      // Clear previous timer
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+      }
+      
+      // Save to Supabase after 1 second of no changes
+      const rowToSave = updatedData.find(r => r.id === id || (id === null && !r.id))
+      if (rowToSave) {
+        saveTimerRef.current = setTimeout(() => {
+          saveBankOwnerData(rowToSave)
+        }, 1000)
+      }
+      
+      return updatedData
+    })
   }
 
   // Close user dropdown when clicking outside
@@ -404,6 +646,18 @@ export default function WealthAccountPage() {
   // Get filtered data for current market
   const filteredBankRentData = bankRentData.filter(row => row.currency === selectedMarket)
   const kpis = calculateKPIs(selectedMarket)
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+          <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading bank price data...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -648,7 +902,8 @@ export default function WealthAccountPage() {
                       <td className="px-4 py-3 border border-gray-200 dark:border-gray-800">
                         <input
                           type="text"
-                          value={row.startDate}
+                          type="date"
+                          value={row.startDate ? (typeof row.startDate === 'string' && row.startDate.includes('T') ? row.startDate.split('T')[0] : row.startDate) : ''}
                           onChange={(e) => updateCell(row.id, 'startDate', e.target.value)}
                           className="w-full px-2 py-1.5 text-sm text-gray-900 dark:text-white bg-transparent border border-transparent focus:outline-none focus:border-2 focus:border-gold-500 focus:bg-gray-50 dark:focus:bg-gray-800 rounded transition-all"
                         />
@@ -755,8 +1010,29 @@ export default function WealthAccountPage() {
                 
                 return (
                   <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-dark-card border-t border-gray-200 dark:border-gray-800">
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredBankRentData.length)} of {filteredBankRentData.length} entries
+                    <div className="flex items-center gap-4">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredBankRentData.length)} of {filteredBankRentData.length} entries
+                      </div>
+                      
+                      {/* Items Per Page Dropdown */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Show:</span>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            setItemsPerPage(Number(e.target.value))
+                            setCurrentPage(1)
+                          }}
+                          className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gold-500"
+                        >
+                          {itemsPerPageOptions.map(option => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -814,6 +1090,115 @@ export default function WealthAccountPage() {
               </div>
             </div>
           </div>
+
+          {/* Bank Owner Table - Only for SGD */}
+          {selectedMarket === 'SGD' && (
+          <div className="mt-8 bg-white dark:bg-dark-card rounded-2xl shadow-lg border border-gray-200 dark:border-gray-900 overflow-hidden">
+            {/* Table Header with Title and Month Dropdown */}
+            <div className="flex items-center justify-between px-6 py-5 bg-white dark:bg-dark-card border-b border-gray-200 dark:border-gray-900">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Bank Owner</h2>
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-600 dark:text-gray-400">Month:</label>
+                <input
+                  type="month"
+                  value={selectedBankOwnerMonth}
+                  onChange={(e) => setSelectedBankOwnerMonth(e.target.value)}
+                  className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gold-500"
+                />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gradient-to-r from-gray-900 to-gray-800 dark:from-gray-800 dark:to-gray-900">
+                    <th className="px-4 py-3.5 text-left text-xs font-bold text-white uppercase tracking-wider border-r border-white dark:border-white">
+                      <div className="flex items-center justify-between">
+                        <span>PARTICULAR</span>
+                        <Filter className="w-3.5 h-3.5 cursor-pointer hover:text-gray-200 transition-colors text-white" />
+                      </div>
+                    </th>
+                    <th className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider border-r border-white dark:border-white">
+                      <div className="flex items-center justify-center">
+                        <span>TOTAL</span>
+                      </div>
+                    </th>
+                    {generateDateHeaders(selectedBankOwnerMonth).map((dateHeader) => (
+                      <th 
+                        key={dateHeader.key}
+                        className="px-4 py-3.5 text-center text-xs font-bold text-white uppercase tracking-wider border-r border-white dark:border-white"
+                      >
+                        {dateHeader.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-dark-card">
+                  {bankOwnerLoading ? (
+                    <tr>
+                      <td colSpan={generateDateHeaders(selectedBankOwnerMonth).length + 2} className="px-4 py-12 text-center">
+                        <div className="flex flex-col items-center justify-center">
+                          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+                          <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading bank owner data...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : bankOwnerData.length === 0 ? (
+                    <tr>
+                      <td colSpan={generateDateHeaders(selectedBankOwnerMonth).length + 2} className="px-4 py-12 text-center">
+                        <div className="flex flex-col items-center justify-center">
+                          <p className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-2">No Data Available</p>
+                          <p className="text-sm text-gray-400 dark:text-gray-500">No bank owner data for this month.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    bankOwnerData.map((row, index) => {
+                      const total = calculateBankOwnerTotal(row)
+                      return (
+                        <tr 
+                          key={row.id || `new-${index}`} 
+                          className={`group transition-colors duration-150 ${
+                            index % 2 === 0 
+                              ? 'bg-white dark:bg-dark-card' 
+                              : 'bg-gray-50/50 dark:bg-gray-900/50'
+                          } hover:bg-gray-100 dark:hover:bg-gray-800/50`}
+                        >
+                        <td className="px-4 py-3 border border-gray-200 dark:border-gray-800">
+                          <input
+                            type="text"
+                            value={row.particular}
+                            onChange={(e) => updateBankOwnerParticular(row.id || null, e.target.value)}
+                            className="w-full px-2 py-1.5 text-sm text-gray-900 dark:text-white bg-transparent border border-transparent focus:outline-none focus:border-2 focus:border-gold-500 focus:bg-gray-50 dark:focus:bg-gray-800 rounded transition-all"
+                          />
+                        </td>
+                        <td className="px-4 py-3 border border-gray-200 dark:border-gray-800 bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20">
+                          <input
+                            type="text"
+                            value={total}
+                            readOnly
+                            className="w-full px-2 py-1.5 text-sm font-semibold text-green-600 dark:text-green-400 bg-transparent focus:outline-none cursor-not-allowed text-right"
+                          />
+                        </td>
+                        {generateDateHeaders(selectedBankOwnerMonth).map((dateHeader) => (
+                          <td key={dateHeader.key} className="px-4 py-3 border border-gray-200 dark:border-gray-800">
+                            <input
+                              type="text"
+                              value={row.dates[dateHeader.key] || ''}
+                              onChange={(e) => updateBankOwnerCell(row.id || null, dateHeader.key, e.target.value)}
+                              placeholder="-"
+                              className="w-full px-2 py-1.5 text-sm text-gray-900 dark:text-white bg-transparent border border-transparent focus:outline-none focus:border-2 focus:border-gold-500 focus:bg-gray-50 dark:focus:bg-gray-800 rounded transition-all text-right"
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          )}
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && rowToDelete && typeof window !== 'undefined' && createPortal(
@@ -930,7 +1315,13 @@ export default function WealthAccountPage() {
                 </div>
                 <div className="bg-gray-50 dark:bg-black rounded-lg p-4">
                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Start Date</p>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{rowToView.startDate || 'N/A'}</p>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {rowToView.startDate 
+                      ? (typeof rowToView.startDate === 'string' 
+                          ? new Date(rowToView.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                          : rowToView.startDate)
+                      : 'N/A'}
+                  </p>
                 </div>
                 <div className="bg-gray-50 dark:bg-black rounded-lg p-4">
                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">Currency</p>

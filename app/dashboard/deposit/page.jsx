@@ -8,11 +8,11 @@ import { formatCurrency, formatNumber, formatPercentage } from '@/lib/utils/form
 import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
-import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
+import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine, LabelList } from 'recharts'
 import { ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settings, User, ChevronDown, AlertCircle, DollarSign, AlertTriangle, Power, TrendingUp, Activity } from 'lucide-react'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
-import { useSession, signOut } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
 import { useThemeStore } from '@/lib/stores/themeStore'
 
@@ -67,7 +67,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function DepositMonitorPage() {
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { selectedMonth, selectedCurrency } = useFilterStore()
   const { depositData, setDepositData } = useDashboardStore()
   const { theme } = useThemeStore()
@@ -78,17 +78,65 @@ export default function DepositMonitorPage() {
   const userDropdownRef = useRef(null)
   const brandDropdownRef = useRef(null)
   const { showToast } = useToast()
+  
+  // State for real deposit data from Supabase
+  const [realDepositData, setRealDepositData] = useState(null)
+  const [isLoadingDepositData, setIsLoadingDepositData] = useState(true)
 
   const tabs = ['Overview', 'Brand Comparison', 'Slow Transaction', 'Case Volume']
-  const brands = ['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG']
+  const [brands, setBrands] = useState(['ALL'])
+  const [isLoadingBrands, setIsLoadingBrands] = useState(false)
+  
+  // Fetch brands from Supabase based on selected currency
+  useEffect(() => {
+    async function fetchBrandsFromSupabase() {
+      if (selectedCurrency === 'ALL') {
+        setBrands(['ALL'])
+        return
+      }
+      
+      setIsLoadingBrands(true)
+      try {
+        const response = await fetch('/api/settings/brand-market-mapping')
+        const result = await response.json()
+        
+        if (result.success) {
+          // Filter brands by currency and status = 'Active'
+          const filteredBrands = result.data
+            .filter(item => item.market === selectedCurrency && item.status === 'Active')
+            .map(item => item.brand)
+          
+          // Add 'ALL' at the beginning
+          setBrands(['ALL', ...filteredBrands])
+          console.log(`Loaded ${filteredBrands.length} brands for ${selectedCurrency}:`, filteredBrands)
+        } else {
+          console.error('Failed to fetch brands:', result.error)
+          // Fallback to hardcoded brands for SGD if fetch fails
+          if (selectedCurrency === 'SGD') {
+            setBrands(['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG'])
+          } else {
+            setBrands(['ALL'])
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching brands:', error)
+        // Fallback to hardcoded brands for SGD if fetch fails
+        if (selectedCurrency === 'SGD') {
+          setBrands(['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG'])
+        } else {
+          setBrands(['ALL'])
+        }
+      } finally {
+        setIsLoadingBrands(false)
+      }
+    }
+    
+    fetchBrandsFromSupabase()
+  }, [selectedCurrency])
   
   // Get available brands based on selected currency
   const getAvailableBrands = () => {
-    if (selectedCurrency === 'SGD') {
-      return brands
-    }
-    // For MYR and USC, only show 'ALL' or hide brand dropdown
-    return ['ALL']
+    return brands
   }
   
   const availableBrands = getAvailableBrands()
@@ -113,11 +161,61 @@ export default function DepositMonitorPage() {
 
   useEffect(() => {
     setDepositData(getDepositData(selectedMonth, selectedCurrency))
-    // Reset brand to 'ALL' when currency changes
-    if (selectedCurrency !== 'SGD') {
+    // Reset brand to 'ALL' when currency changes or if selected brand is not in available brands
+    if (!availableBrands.includes(selectedBrand)) {
       setSelectedBrand('ALL')
     }
-  }, [selectedMonth, selectedCurrency, setDepositData])
+  }, [selectedMonth, selectedCurrency, setDepositData, availableBrands, selectedBrand])
+  
+  // Fetch real deposit data from Supabase
+  useEffect(() => {
+    async function fetchDepositData() {
+      if (!selectedMonth?.start || !selectedMonth?.end) {
+        console.log('No selectedMonth available')
+        return
+      }
+      
+      setIsLoadingDepositData(true)
+      try {
+        // Format date as YYYY-MM-DD
+        const formatLocalDate = (date) => {
+          const dateObj = date instanceof Date ? date : new Date(date)
+          const year = dateObj.getFullYear()
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+          const day = String(dateObj.getDate()).padStart(2, '0')
+          return `${year}-${month}-${day}`
+        }
+        
+        const startDate = formatLocalDate(selectedMonth.start)
+        const endDate = formatLocalDate(selectedMonth.end)
+        
+        console.log('Fetching deposit data:', { startDate, endDate, currency: selectedCurrency, brand: selectedBrand })
+        
+        const response = await fetch(
+          `/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`
+        )
+        const result = await response.json()
+        
+        console.log('Deposit API response:', result)
+        
+        if (result.success) {
+          setRealDepositData(result.data)
+        } else {
+          console.error('Failed to fetch deposit data:', result.error)
+          showToast('Failed to load deposit data', 'error')
+          setRealDepositData(null)
+        }
+      } catch (error) {
+        console.error('Error fetching deposit data:', error)
+        showToast('Error loading deposit data', 'error')
+        setRealDepositData(null)
+      } finally {
+        setIsLoadingDepositData(false)
+      }
+    }
+    
+    fetchDepositData()
+  }, [selectedMonth, selectedCurrency, selectedBrand, showToast])
 
   if (!depositData) {
     return <div>Loading...</div>
@@ -125,6 +223,29 @@ export default function DepositMonitorPage() {
 
   // Calculate KPI data based on selected currency and brand
   const calculateOverviewData = () => {
+    // Use real data if available (for MYR)
+    if (realDepositData && selectedCurrency === 'MYR') {
+      return {
+        totalTransaction: realDepositData.totalTransaction || 0,
+        totalTransAutomation: realDepositData.totalTransAutomation || 0,
+        avgPTimeAutomation: realDepositData.avgProcessingTime || 0,
+        transOver60sAutomation: realDepositData.overdueOver60s || 0,
+        coverageRate: realDepositData.coverageRate || 0
+      }
+    }
+    
+    // Return 0 for SGD and USC (no data in Supabase yet)
+    if (selectedCurrency === 'SGD' || selectedCurrency === 'USC') {
+      return {
+        totalTransaction: 0,
+        totalTransAutomation: 0,
+        avgPTimeAutomation: 0,
+        transOver60sAutomation: 0,
+        coverageRate: 0
+      }
+    }
+    
+    // Fallback to mock data for ALL only
     const totalDays = depositData.dailyData.length
     let totalTransaction = 0
     let totalTransAutomation = 0
@@ -140,13 +261,6 @@ export default function DepositMonitorPage() {
         totalProcessingTime += 25 + (index % 10) * 1.5
         totalOver60s += Math.floor(day.count * 0.02)
         totalCoverage += 85 + (index % 10) * 1
-      } else if (selectedCurrency === 'MYR') {
-        const myrCount = Math.floor(day.count * 0.4)
-        totalTransaction += myrCount
-        totalTransAutomation += Math.floor(myrCount * 0.9)
-        totalProcessingTime += 25 + (index % 10) * 1.5 + (Math.sin(index * 7) * 10000) % 1 * 5
-        totalOver60s += Math.floor(myrCount * 0.02)
-        totalCoverage += 85 + (index % 10) * 1 + (Math.sin(index * 7) * 10000) % 1 * 3
       } else if (selectedCurrency === 'SGD') {
         if (selectedBrand === 'ALL') {
           const sgdCount = Math.floor(day.count * 0.35)
@@ -212,100 +326,174 @@ export default function DepositMonitorPage() {
   }
 
   // Chart data following date range - with all brands data for SGD
-  // Use useMemo to regenerate when currency changes
-  const chartData = depositData.dailyData.map((day, index) => {
-    const baseData = {
-      date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  // Use real data for MYR if available
+  const chartData = (() => {
+    // Use real data for MYR
+    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.dailyData && Array.isArray(realDepositData.dailyData)) {
+      return realDepositData.dailyData
+        .sort((a, b) => new Date(a.date) - new Date(b.date)) // Sort by date ascending
+        .map(day => {
+          const dateObj = new Date(day.date)
+          const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          
+          return {
+            date: formattedDate,
+            originalDate: day.date, // Keep original date for sorting
+            // Use real data from API
+            overdueTrans: realDepositData.chartData.overdueTrans[day.date] || 0,
+            avgProcessingTime: realDepositData.chartData.avgProcessingTime[day.date] || 0,
+            coverageRate: realDepositData.chartData.coverageRate[day.date] || 0,
+            transactionVolume: realDepositData.chartData.transactionVolume[day.date] || 0,
+            // For consistency with multi-currency view
+            myr_overdueTrans: realDepositData.chartData.overdueTrans[day.date] || 0,
+            myr_avgProcessingTime: realDepositData.chartData.avgProcessingTime[day.date] || 0,
+            myr_coverageRate: realDepositData.chartData.coverageRate[day.date] || 0,
+            myr: realDepositData.chartData.transactionVolume[day.date] || 0
+          }
+        })
     }
     
-    // Add data for each brand (only for SGD currency)
-    if (selectedCurrency === 'SGD') {
-      brands.slice(1).forEach((brand) => {
-        const multiplier = {
-          'WBSG': 1.2,
-          'M24SG': 1.0,
-          'OK188SG': 0.9,
-          'OXSG': 0.8,
-          'FWSG': 0.7,
-          'ABSG': 0.6
-        }[brand] || 1
+    // Return data with 0 values for SGD and USC (no data in Supabase yet)
+    if (selectedCurrency === 'SGD' || selectedCurrency === 'USC') {
+      // Generate dates for the month but with 0 values
+      if (!selectedMonth?.start || !selectedMonth?.end) {
+        return []
+      }
+      
+      const days = []
+      const startDate = new Date(selectedMonth.start)
+      const endDate = new Date(selectedMonth.end)
+      
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const dateKey = d.toISOString().split('T')[0]
         
-        // Use index for consistent random values
-        const randomSeed = index * 7 + brand.charCodeAt(0)
-        const random = (Math.sin(randomSeed) * 10000) % 1
+        const baseData = {
+          date: dateStr,
+          originalDate: dateKey,
+          overdueTrans: 0,
+          avgProcessingTime: 0,
+          coverageRate: 0,
+          transactionVolume: 0,
+          myr_overdueTrans: 0,
+          myr_avgProcessingTime: 0,
+          myr_coverageRate: 0,
+          myr: 0,
+          sgd_overdueTrans: 0,
+          sgd_avgProcessingTime: 0,
+          sgd_coverageRate: 0,
+          sgd: 0,
+          usc_overdueTrans: 0,
+          usc_avgProcessingTime: 0,
+          usc_coverageRate: 0,
+          usc: 0
+        }
         
-        baseData[`${brand}_overdueTrans`] = Math.floor(day.count * 0.15 * multiplier)
-        baseData[`${brand}_avgProcessingTime`] = (25 + random * 15) * multiplier
-        baseData[`${brand}_coverageRate`] = (85 + random * 10) * (multiplier * 0.9)
-        baseData[`${brand}_transactionVolume`] = Math.floor(day.count * multiplier)
-      })
+        // Add brand data for SGD (all 0)
+        if (selectedCurrency === 'SGD') {
+          brands.slice(1).forEach((brand) => {
+            baseData[`${brand}_overdueTrans`] = 0
+            baseData[`${brand}_avgProcessingTime`] = 0
+            baseData[`${brand}_coverageRate`] = 0
+            baseData[`${brand}_transactionVolume`] = 0
+          })
+        }
+        
+        days.push(baseData)
+      }
+      
+      return days
     }
     
-    // Aggregate data for ALL or when not SGD
-    baseData.overdueTrans = Math.floor(day.count * 0.15)
-    baseData.avgProcessingTime = 25 + (index % 10) * 1.5
-    baseData.coverageRate = 85 + (index % 10) * 1
-    baseData.transactionVolume = day.count
-    
-    // Always add market data (MYR, SGD, USC) for all metrics when "ALL" is selected
-    const randomVariation = (Math.sin(index * 7) * 10000) % 1
-    baseData.myr_overdueTrans = Math.floor(day.count * 0.15 * 0.4)
-    baseData.sgd_overdueTrans = Math.floor(day.count * 0.15 * 0.35)
-    baseData.usc_overdueTrans = Math.floor(day.count * 0.15 * 0.25)
-    
-    baseData.myr_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 5
-    baseData.sgd_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 3
-    baseData.usc_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 2
-    
-    baseData.myr_coverageRate = 85 + (index % 10) * 1 + randomVariation * 3
-    baseData.sgd_coverageRate = 85 + (index % 10) * 1 + randomVariation * 2
-    baseData.usc_coverageRate = 85 + (index % 10) * 1 + randomVariation * 1
-    
-    baseData.myr = Math.floor(day.count * 0.4)
-    baseData.sgd = Math.floor(day.count * 0.35)
-    baseData.usc = Math.floor(day.count * 0.25)
-    
-    return baseData
-  })
+    // Fallback to mock data for ALL only
+    return depositData.dailyData
+      .sort((a, b) => new Date(a.date) - new Date(b.date)) // Sort by date ascending
+      .map((day, index) => {
+        const baseData = {
+          date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          originalDate: day.date, // Keep original date for sorting
+        }
+      
+      // Aggregate data for ALL
+      baseData.overdueTrans = Math.floor(day.count * 0.15)
+      baseData.avgProcessingTime = 25 + (index % 10) * 1.5
+      baseData.coverageRate = 85 + (index % 10) * 1
+      baseData.transactionVolume = day.count
+      
+      // Always add market data (MYR, SGD, USC) for all metrics when "ALL" is selected
+      const randomVariation = (Math.sin(index * 7) * 10000) % 1
+      baseData.myr_overdueTrans = Math.floor(day.count * 0.15 * 0.4)
+      baseData.sgd_overdueTrans = Math.floor(day.count * 0.15 * 0.35)
+      baseData.usc_overdueTrans = Math.floor(day.count * 0.15 * 0.25)
+      
+      baseData.myr_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 5
+      baseData.sgd_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 3
+      baseData.usc_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 2
+      
+      baseData.myr_coverageRate = 85 + (index % 10) * 1 + randomVariation * 3
+      baseData.sgd_coverageRate = 85 + (index % 10) * 1 + randomVariation * 2
+      baseData.usc_coverageRate = 85 + (index % 10) * 1 + randomVariation * 1
+      
+      baseData.myr = Math.floor(day.count * 0.4)
+      baseData.sgd = Math.floor(day.count * 0.35)
+      baseData.usc = Math.floor(day.count * 0.25)
+      
+      return baseData
+    })
+  })()
 
 
-  // Brand Comparison Data
-  const brandComparisonData = [
-    { brand: 'WBSG', avgTime: 68, coverageRate: 75 },
-    { brand: 'M24SG', avgTime: 45, coverageRate: 82 },
-    { brand: 'OK188SG', avgTime: 38, coverageRate: 88 },
-    { brand: 'OXSG', avgTime: 30, coverageRate: 92 },
-    { brand: 'FWSG', avgTime: 25, coverageRate: 95 },
-    { brand: 'ABSG', avgTime: 18, coverageRate: 98 },
-  ].map(item => ({
-    ...item,
-    color: item.avgTime <= 30 ? '#10b981' : item.avgTime <= 60 ? '#f59e0b' : '#ef4444',
-    status: item.avgTime <= 30 ? 'Fast' : item.avgTime <= 60 ? 'Moderate' : 'Slow'
-  }))
+  // Brand Comparison Data - Use real data if available, otherwise return empty/zero
+  const brandComparisonData = (() => {
+    // Use real data for MYR if available
+    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.brandComparison && Array.isArray(realDepositData.brandComparison)) {
+      return realDepositData.brandComparison.map(item => ({
+        brand: item.brand,
+        avgTime: item.avgTime || 0,
+        coverageRate: item.coverageRate || 0,
+        totalTransaction: item.totalTransaction || 0,
+        totalAutomation: item.totalAutomation || 0,
+        totalOverdue: item.totalOverdue || 0,
+        color: item.avgTime <= 30 ? '#10b981' : item.avgTime <= 60 ? '#f59e0b' : '#ef4444',
+        status: item.avgTime <= 30 ? 'Fast' : item.avgTime <= 60 ? 'Moderate' : 'Slow'
+      }))
+    }
+    
+    // Return empty array for SGD, USC (no data in Supabase yet)
+    return []
+  })()
 
-  // Slow Transaction Data
-  const slowTransactionData = {
-    totalSlowTransaction: 245,
-    avgProcessingTime: 72.5,
-    brand: 'WBSG',
-    details: [
-      { brand: 'WBSG', customerName: 'Customer A', amount: 1200, processingTime: 65, completed: '2 hours ago' },
-      { brand: 'M24SG', customerName: 'Customer B', amount: 850, processingTime: 68, completed: '5 hours ago' },
-      { brand: 'OK188SG', customerName: 'Customer C', amount: 3500, processingTime: 75, completed: '1 day ago' },
-      { brand: 'WBSG', customerName: 'Customer D', amount: 2100, processingTime: 82, completed: '1 day ago' },
-      { brand: 'OXSG', customerName: 'Customer E', amount: 950, processingTime: 63, completed: '3 hours ago' },
-    ]
-  }
+  // Slow Transaction Data - Use real data if available, otherwise return zero
+  const slowTransactionData = (() => {
+    // Use real data for MYR if available
+    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.slowTransactions && realDepositData.slowTransactionSummary) {
+      return {
+        totalSlowTransaction: realDepositData.slowTransactionSummary.totalSlowTransaction || 0,
+        avgProcessingTime: realDepositData.slowTransactionSummary.avgProcessingTime || 0,
+        brand: realDepositData.slowTransactionSummary.brand || 'N/A',
+        details: realDepositData.slowTransactions || []
+      }
+    }
+    
+    // Return zero data for SGD, USC (no data in Supabase yet)
+    return {
+      totalSlowTransaction: 0,
+      avgProcessingTime: 0,
+      brand: 'N/A',
+      details: []
+    }
+  })()
 
-  // Case Volume Data
-  const caseVolumeData = [
-    { brand: 'WBSG', totalCase: 8.75, totalTransAutomation: 1250, totalOverdue: 245 },
-    { brand: 'M24SG', totalCase: 5, totalTransAutomation: 2100, totalOverdue: 180 },
-    { brand: 'OK188SG', totalCase: 3.75, totalTransAutomation: 1850, totalOverdue: 120 },
-    { brand: 'OXSG', totalCase: 2.5, totalTransAutomation: 1500, totalOverdue: 95 },
-    { brand: 'FWSG', totalCase: 1, totalTransAutomation: 980, totalOverdue: 45 },
-    { brand: 'ABSG', totalCase: 0, totalTransAutomation: 750, totalOverdue: 20 },
-  ]
+  // Case Volume Data - Use real data if available, otherwise return empty
+  const caseVolumeData = (() => {
+    // Use real data for MYR if available
+    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.caseVolume && Array.isArray(realDepositData.caseVolume)) {
+      return realDepositData.caseVolume
+    }
+    
+    // Return empty array for SGD, USC (no data in Supabase yet)
+    return []
+  })()
 
   return (
     <div className="space-y-6">
@@ -331,22 +519,25 @@ export default function DepositMonitorPage() {
           
           {/* Filter Bar - Right */}
           <div className="ml-auto flex items-center gap-3">
-            {/* Brand Dropdown Filter - Only show for SGD and Overview tab */}
-            {selectedCurrency === 'SGD' && activeTab === 'Overview' ? (
+            {/* Brand Dropdown Filter - Show for all currencies if brands are available, on Overview tab */}
+            {selectedCurrency !== 'ALL' && activeTab === 'Overview' && availableBrands.length > 1 ? (
               <div className="relative" ref={brandDropdownRef}>
                 <button
                   onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
                   className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-900 dark:text-gray-900 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
                   style={{ backgroundColor: '#DEC05F' }}
+                  disabled={isLoadingBrands}
                 >
-                  <span className="text-gray-900 dark:text-gray-900">{selectedBrand}</span>
+                  <span className="text-gray-900 dark:text-gray-900">
+                    {isLoadingBrands ? 'Loading...' : selectedBrand}
+                  </span>
                   {isBrandDropdownOpen ? (
                     <ChevronDown className="h-3.5 w-3.5 text-gray-900 dark:text-gray-900 rotate-180 transition-transform" />
                   ) : (
                     <ChevronDown className="h-3.5 w-3.5 text-gray-900 dark:text-gray-900 transition-transform" />
                   )}
                 </button>
-                {isBrandDropdownOpen && (
+                {isBrandDropdownOpen && !isLoadingBrands && (
                   <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-dark-card border border-gray-200 dark:border-gray-900 rounded-lg shadow-lg z-50">
                     {availableBrands.map((brand) => (
                       <button
@@ -402,7 +593,7 @@ export default function DepositMonitorPage() {
               trend="neutral"
             />
             <KPICard
-              title="Trans > 5m"
+              title="Overdue > 60s"
               value={formatNumber(overviewData.transOver60sAutomation)}
               change={0}
               icon={AlertCircle}
@@ -915,9 +1106,20 @@ export default function DepositMonitorPage() {
       {/* Brand Comparison Tab */}
       {activeTab === 'Brand Comparison' && (
         <div className="space-y-6">
+          {brandComparisonData.length === 0 ? (
+            <div className="bg-white dark:bg-dark-card rounded-2xl shadow-lg border border-gray-200 dark:border-gray-900 p-12 text-center">
+              <p className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-2">No Brand Comparison Data Available</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                {selectedCurrency === 'MYR' 
+                  ? 'No deposit data found for the selected period.' 
+                  : `Brand comparison data is only available for MYR currency. Please select MYR to view brand comparison.`}
+              </p>
+            </div>
+          ) : (
+            <>
           <ChartContainer title="Brand Avg Processed Time Comparison">
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" domain={[0, 80]} stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
@@ -927,6 +1129,13 @@ export default function DepositMonitorPage() {
                   {brandComparisonData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
+                  <LabelList 
+                    dataKey="avgTime" 
+                    position="right" 
+                    formatter={(value) => value.toFixed(2)}
+                    className="text-gray-700 dark:text-gray-300"
+                    style={{ fontSize: '12px', fontWeight: 600 }}
+                  />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -934,16 +1143,26 @@ export default function DepositMonitorPage() {
 
           <ChartContainer title="Coverage Rate Comparison">
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" domain={[0, 100]} stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="coverageRate" radius={[0, 4, 4, 0]} fill="#10b981" />
+                <Bar dataKey="coverageRate" radius={[0, 4, 4, 0]} fill="#10b981">
+                  <LabelList 
+                    dataKey="coverageRate" 
+                    position="right" 
+                    formatter={(value) => value.toFixed(2)}
+                    className="text-gray-700 dark:text-gray-300"
+                    style={{ fontSize: '12px', fontWeight: 600 }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>
-          </div>
+          </>
+          )}
+        </div>
       )}
 
       {/* Slow Transaction Tab */}
@@ -992,21 +1211,41 @@ export default function DepositMonitorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {slowTransactionData.details.map((transaction, index) => (
+                  {slowTransactionData.details.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 px-4 text-center text-gray-500 dark:text-gray-400">
+                        No slow transactions found for the selected period.
+                      </td>
+                    </tr>
+                  ) : (
+                    slowTransactionData.details.map((transaction, index) => (
                       <tr key={index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="py-4 px-4">
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white">
                             {transaction.brand}
                           </span>
                         </td>
-                        <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">{transaction.customerName}</td>
-                      <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(transaction.amount, selectedCurrency || 'SGD', 'S$')}
+                        <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">
+                          {transaction.customerName || 'N/A'}
                         </td>
-                      <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">{transaction.processingTime}s</td>
-                        <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">{transaction.completed}</td>
+                        <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">
+                          {transaction.amount ? formatCurrency(transaction.amount, selectedCurrency || 'MYR') : 'N/A'}
+                        </td>
+                        <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">
+                          <span className={`font-semibold ${
+                            transaction.processingTime > 90 ? 'text-red-600 dark:text-red-400' :
+                            transaction.processingTime > 75 ? 'text-orange-600 dark:text-orange-400' :
+                            'text-yellow-600 dark:text-yellow-400'
+                          }`}>
+                            {typeof transaction.processingTime === 'number' ? transaction.processingTime.toFixed(1) : transaction.processingTime}s
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">
+                          {transaction.completed || 'N/A'}
+                        </td>
                       </tr>
-                  ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1017,29 +1256,58 @@ export default function DepositMonitorPage() {
       {/* Case Volume Tab */}
       {activeTab === 'Case Volume' && (
         <div className="space-y-6">
+          {caseVolumeData.length === 0 ? (
+            <div className="bg-white dark:bg-dark-card rounded-2xl shadow-lg border border-gray-200 dark:border-gray-900 p-12 text-center">
+              <p className="text-lg font-semibold text-gray-500 dark:text-gray-400 mb-2">No Case Volume Data Available</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                {selectedCurrency === 'MYR' 
+                  ? 'No case volume data found for the selected period.' 
+                  : `Case volume data is only available for MYR currency. Please select MYR to view case volume.`}
+              </p>
+            </div>
+          ) : (
+            <>
           <ChartContainer title="Total Case Volume Comparison">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="totalCase" radius={[0, 4, 4, 0]} fill="#ef4444" />
+                <Bar dataKey="totalCase" radius={[0, 4, 4, 0]} fill="#ef4444">
+                  <LabelList 
+                    dataKey="totalCase" 
+                    position="right" 
+                    formatter={(value) => value.toFixed(2) + '%'}
+                    className="text-gray-700 dark:text-gray-300"
+                    style={{ fontSize: '12px', fontWeight: 600 }}
+                  />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>
 
           <ChartContainer title="Total Overdue Transaction Comparison">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="totalOverdue" radius={[0, 4, 4, 0]} fill="#f59e0b" />
+                <Bar dataKey="totalOverdue" radius={[0, 4, 4, 0]} fill="#f59e0b">
+                  <LabelList 
+                    dataKey="totalOverdue" 
+                    position="right" 
+                    formatter={(value) => value}
+                    className="text-gray-700 dark:text-gray-300"
+                    style={{ fontSize: '12px', fontWeight: 600 }}
+                  />
+                </Bar>
             </BarChart>
           </ResponsiveContainer>
           </ChartContainer>
+          </>
+          )}
           </div>
       )}
     </div>

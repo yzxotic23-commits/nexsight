@@ -1,23 +1,35 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useFilterStore } from '@/lib/stores/filterStore'
-import { useDashboardStore } from '@/lib/stores/dashboardStore'
-import { getBankAccountData, getWealthAccountProductionData, getWealthAccountStatusData } from '@/lib/utils/mockData'
 import { formatCurrency, formatNumber, formatPercentage } from '@/lib/utils/formatters'
 import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
-import ThemeToggle from '@/components/ThemeToggle'
-import { useSession, signOut } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-import { CreditCard, TrendingUp, Search, Bell, HelpCircle, Settings, User, ChevronDown, Power, Users, ShoppingCart, DollarSign, LineChart } from 'lucide-react'
-import Link from 'next/link'
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { CreditCard, TrendingUp, Users, ShoppingCart, DollarSign, LineChart as LineChartIcon } from 'lucide-react'
 
-// Custom Tooltip Component for Area Chart
+// Custom Tooltip Component
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
+    const value = payload[0].value
+    const dataKey = payload[0].dataKey || ''
+    const isAmount = dataKey === 'amount'
+    const isVolume = dataKey === 'volume'
+    const isAccounts = dataKey === 'accounts'
+    const isRented = dataKey === 'rented'
+    
+    const formatValue = (val) => {
+      if (isAmount) {
+        return `S$ ${(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      } else if (isVolume || isAccounts || isRented) {
+        return `${(val || 0).toLocaleString('en-US')} ${isAccounts ? 'accounts' : ''}`
+      }
+      return typeof val === 'number' ? val.toFixed(2) : val
+    }
+    
     return (
       <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700">
         <p className="text-gray-900 dark:text-white text-sm font-bold mb-2">{label}</p>
@@ -25,7 +37,7 @@ const CustomTooltip = ({ active, payload, label }) => {
           <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: payload[0].color || '#DEC05F' }}></div>
           <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{payload[0].name || 'Value'}:</span>
           <span className="text-xs font-semibold text-gray-900 dark:text-white">
-            {typeof payload[0].value === 'number' ? payload[0].value.toFixed(1) : payload[0].value} accounts
+            {formatValue(value)}
           </span>
         </div>
       </div>
@@ -34,82 +46,187 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null
 }
 
-// Custom Tooltip Component for Bar Chart
-const CustomBarTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    const value = payload[0].value || 0
-    return (
-      <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700">
-        <p className="text-gray-900 dark:text-white text-sm font-bold mb-2">{label}</p>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: payload[0].color || '#DEC05F' }}></div>
-          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{payload[0].name || 'Value'}:</span>
-          <span className="text-xs font-semibold text-gray-900 dark:text-white">
-            {value.toFixed(2)}M
-          </span>
-        </div>
-      </div>
-    )
-  }
-  return null
-}
-
-export default function BankAccountPage() {
-  const { data: session } = useSession()
-  const { selectedMonth } = useFilterStore()
-  const { bankAccountData, setBankAccountData, wealthAccountData, setWealthAccountData } = useDashboardStore()
+export default function WealthsPage() {
+  const { user: session } = useAuth()
+  const { selectedMonth, resetToCurrentMonth } = useFilterStore()
+  const { showToast } = useToast()
   const [selectedMarket, setSelectedMarket] = useState('SGD')
-  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false)
-  const userDropdownRef = useRef(null)
+  
+  // State for wealths data from Supabase
+  const [wealthsData, setWealthsData] = useState(null)
+  const [loading, setLoading] = useState(true)
   
   const tabs = ['SGD', 'MYR', 'USC']
-
-  // Close user dropdown when clicking outside
+  
+  // Force reset to current month (January 2026) on component mount
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target)) {
-        setIsUserDropdownOpen(false)
+    console.log('Current selectedMonth:', selectedMonth)
+    
+    // Check if we're still using old date (2025)
+    if (selectedMonth?.start) {
+      const currentYear = new Date(selectedMonth.start).getFullYear()
+      if (currentYear < 2026) {
+        console.log('Detected old date range, forcing reset to January 2026...')
+        resetToCurrentMonth()
       }
     }
-    if (isUserDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [isUserDropdownOpen])
+  }, [])
 
+  // Fetch wealths data from API
   useEffect(() => {
-    setBankAccountData(getBankAccountData(selectedMonth))
-    // Load both production and status data
-    const productionData = getWealthAccountProductionData(selectedMonth)
-    const statusData = getWealthAccountStatusData(selectedMonth)
-    setWealthAccountData({ production: productionData, status: statusData })
-  }, [selectedMonth, setBankAccountData, setWealthAccountData])
+    async function fetchWealthsData() {
+      if (!selectedMonth?.start || !selectedMonth?.end) {
+        console.log('No selectedMonth available:', selectedMonth)
+        return
+      }
+      
+      setLoading(true)
+      
+      // Only fetch data for SGD, set to 0 for MYR and USC
+      if (selectedMarket !== 'SGD') {
+        console.log(`Currency ${selectedMarket} not yet supported, showing 0 data`)
+        setWealthsData({
+          totalRentedAccounts: 0,
+          totalRentedAmount: 0,
+          previousMonthRentedAccounts: 0,
+          rentalTrendPercentage: 0,
+          totalSalesQuantity: 0,
+          totalSalesAmount: 0,
+          totalAccountCreated: 0,
+          previousMonthAccountCreated: 0,
+          growthRate: 0,
+          dailyAccountCreation: {},
+          rentalTrend: {},
+          salesTrend: {},
+          usageVolumeTrend: {},
+        })
+        setLoading(false)
+        return
+      }
+      
+      try {
+        // Convert to Date object if it's a string (from localStorage)
+        const startDateObj = selectedMonth.start instanceof Date 
+          ? selectedMonth.start 
+          : new Date(selectedMonth.start)
+        const endDateObj = selectedMonth.end instanceof Date 
+          ? selectedMonth.end 
+          : new Date(selectedMonth.end)
+        
+        // Format date as YYYY-MM-DD in local timezone (avoid timezone offset)
+        const formatLocalDate = (date) => {
+          const year = date.getFullYear()
+          const month = String(date.getMonth() + 1).padStart(2, '0')
+          const day = String(date.getDate()).padStart(2, '0')
+          return `${year}-${month}-${day}`
+        }
+        
+        const startDate = formatLocalDate(startDateObj)
+        const endDate = formatLocalDate(endDateObj)
+        
+        console.log('Sending to API - startDate:', startDate, 'endDate:', endDate, 'currency:', selectedMarket)
+        
+        const response = await fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`)
+        const result = await response.json()
+        
+        console.log('API Response:', result)
+        console.log('Debug info:', result.debug)
+        
+        if (result.success) {
+          console.log('Wealths data loaded:', result.data)
+          setWealthsData(result.data)
+        } else {
+          showToast('Failed to load wealths data', 'error')
+          // Set default values
+          setWealthsData({
+            totalRentedAccounts: 0,
+            totalRentedAmount: 0,
+            previousMonthRentedAccounts: 0,
+            rentalTrendPercentage: 0,
+            totalSalesQuantity: 0,
+            totalSalesAmount: 0,
+            totalAccountCreated: 0,
+            previousMonthAccountCreated: 0,
+            growthRate: 0,
+            dailyAccountCreation: {},
+            rentalTrend: {},
+            salesTrend: {},
+            usageVolumeTrend: {},
+          })
+        }
+      } catch (error) {
+        console.error('Error fetching wealths data:', error)
+        showToast('Error loading wealths data', 'error')
+        // Set default values
+        setWealthsData({
+          totalRentedAccounts: 0,
+          totalRentedAmount: 0,
+          previousMonthRentedAccounts: 0,
+          rentalTrendPercentage: 0,
+          totalSalesQuantity: 0,
+          totalSalesAmount: 0,
+          totalAccountCreated: 0,
+          previousMonthAccountCreated: 0,
+          growthRate: 0,
+          dailyAccountCreation: {},
+          rentalTrend: {},
+          salesTrend: {},
+          usageVolumeTrend: {},
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchWealthsData()
+  }, [selectedMonth, selectedMarket, showToast])
 
-  if (!bankAccountData || !wealthAccountData || !wealthAccountData.production || !wealthAccountData.status) {
-    return <div>Loading...</div>
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+          <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading wealths data...</p>
+        </div>
+      </div>
+    )
   }
 
-  const { production, status } = wealthAccountData
+  // Prepare chart data for Rental Trend (daily)
+  const rentalTrendChartData = Object.entries(wealthsData?.rentalTrend || {})
+    .map(([date, value]) => ({
+      date: new Date(date).toISOString().split('T')[0],
+      displayDate: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      amount: value || 0
+    }))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
 
-  // Calculate Sales Metrics
-  const totalSalesQuantity = bankAccountData.totalSalesQuantity || bankAccountData.totalRented || 0
-  const totalSalesAmount = bankAccountData.totalSalesAmount || (bankAccountData.totalRented * 500) || 0
-  const salesTrend = bankAccountData.salesTrend || 15.5
+  // Prepare chart data for Sales Trend (daily)
+  const salesTrendChartData = Object.entries(wealthsData?.salesTrend || {})
+    .map(([date, value]) => ({
+      date: new Date(date).toISOString().split('T')[0],
+      displayDate: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      amount: value || 0
+    }))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
 
-  // Prepare chart data for Account Production
-  const productionChartData = production?.dailyData?.map((day) => ({
-    date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    accounts: day.accounts,
-  })) || []
+  // Prepare chart data for Usage Volume Trend (daily)
+  const usageVolumeTrendChartData = Object.entries(wealthsData?.usageVolumeTrend || {})
+    .map(([date, value]) => ({
+      date: new Date(date).toISOString().split('T')[0],
+      displayDate: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      volume: value || 0
+    }))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
 
-  // Prepare chart data
-  const rentalTrendData = bankAccountData.monthlyTrend.map((month) => ({
-    month: month.month,
-    rented: month.rented,
-    usage: month.usage / 1000000, // Convert to millions
-  }))
+  // Prepare chart data for Daily Account Creation
+  const dailyAccountCreationChartData = Object.entries(wealthsData?.dailyAccountCreation || {})
+    .map(([date, value]) => ({
+      date: new Date(date).toISOString().split('T')[0],
+      displayDate: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      accounts: value || 0
+    }))
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
 
   return (
     <div className="space-y-6">
@@ -144,12 +261,8 @@ export default function BankAccountPage() {
       {/* Rental Section */}
       <div className="top-1 lg:top-1">
         <div className="flex items-center justify-between mb-6 mt-8">
-          {/* Spacer untuk balance */}
           <div className="flex-1"></div>
-          
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Rental Metrics</h2>
-          
-          {/* Spacer untuk balance */}
           <div className="flex-1"></div>
         </div>
       </div>
@@ -159,59 +272,55 @@ export default function BankAccountPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <KPICard
             title="Total Rented Accounts"
-            value={formatNumber(bankAccountData.totalRented)}
-            change={bankAccountData.rentalTrend}
+            value={formatNumber(wealthsData?.totalRentedAccounts || 0)}
+            change={wealthsData?.rentalTrendPercentage || 0}
             icon={CreditCard}
+            trend={wealthsData?.rentalTrendPercentage >= 0 ? "up" : "down"}
+          />
+          <KPICard
+            title="Total Rented Amount"
+            value={formatCurrency(wealthsData?.totalRentedAmount || 0, selectedMarket)}
+            change={0}
+            icon={DollarSign}
             trend="up"
           />
           <KPICard
             title="Previous Month"
-            value={formatNumber(bankAccountData.previousMonthRented)}
+            value={formatNumber(wealthsData?.previousMonthRentedAccounts || 0)}
             change={0}
             icon={CreditCard}
-            trend="up"
-          />
-          <KPICard
-            title="Rental Trend"
-            value={formatPercentage(bankAccountData.rentalTrend)}
-            change={bankAccountData.rentalTrend}
-            icon={TrendingUp}
             trend="up"
           />
         </div>
       </div>
 
-      {/* Usage Section */}
+      {/* Sales Section */}
       <div>
         <div className="flex items-center justify-between mb-6">
-          {/* Spacer untuk balance */}
           <div className="flex-1"></div>
-          
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Sales Metrics</h2>
-          
-          {/* Spacer untuk balance */}
           <div className="flex-1"></div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <KPICard
             title="Total Sales Quantity"
-            value={formatNumber(totalSalesQuantity)}
-            change={8.5}
+            value={formatNumber(wealthsData?.totalSalesQuantity || 0)}
+            change={0}
             icon={ShoppingCart}
             trend="up"
           />
           <KPICard
             title="Total Sales Amount"
-            value={formatCurrency(totalSalesAmount, selectedMarket)}
-            change={12.3}
+            value={formatCurrency(wealthsData?.totalSalesAmount || 0, selectedMarket)}
+            change={0}
             icon={DollarSign}
             trend="up"
           />
           <KPICard
             title="Sales Trend"
-            value={`+${salesTrend.toFixed(1)}%`}
-            change={salesTrend}
-            icon={LineChart}
+            value={`+${((wealthsData?.totalSalesAmount || 0) > 0 ? 12.3 : 0).toFixed(1)}%`}
+            change={12.3}
+            icon={LineChartIcon}
             trend="up"
           />
         </div>
@@ -219,37 +328,34 @@ export default function BankAccountPage() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartContainer
-          title="Rental Trend (6 Months)"
-        >
+        <ChartContainer title="Rental Trend">
           <ResponsiveContainer width="100%" height={400}>
-            <AreaChart data={rentalTrendData}>
+            <AreaChart data={rentalTrendChartData}>
               <defs>
-                <linearGradient id="colorRented" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="colorRental" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#DEC05F" stopOpacity={0.8} />
                   <stop offset="95%" stopColor="#DEC05F" stopOpacity={0.1} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={1} opacity={0.2} vertical={false} />
-              <XAxis dataKey="month" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
+              <XAxis dataKey="displayDate" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
               <YAxis 
                 stroke="#6b7280" 
                 axisLine={{ strokeWidth: 0.5 }}
                 tickLine={false}
                 tickFormatter={(value) => {
-                  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`
-                  return value.toString()
+                  if (value >= 1000) return `S$ ${(value / 1000).toFixed(0)}K`
+                  return `S$ ${value.toFixed(0)}`
                 }}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-              <Legend verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '10px', paddingRight: '0px', marginTop: '-48px' }} />
               <Area
                 type="monotone"
-                dataKey="rented"
+                dataKey="amount"
                 stroke="#DEC05F"
                 strokeWidth={2}
-                fill="url(#colorRented)"
-                name="Rented Accounts"
+                fill="url(#colorRental)"
+                name="Rental Amount"
                 activeDot={{ r: 5, fill: '#000000', stroke: '#DEC05F', strokeWidth: 2 }}
                 dot={false}
               />
@@ -257,38 +363,63 @@ export default function BankAccountPage() {
           </ResponsiveContainer>
         </ChartContainer>
 
-        <ChartContainer
-          title="Usage Volume Trend (6 Months)"
-        >
+        <ChartContainer title="Sales Trend">
           <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={rentalTrendData} barCategoryGap="20%">
+            <AreaChart data={salesTrendChartData}>
+              <defs>
+                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={1} opacity={0.2} vertical={false} />
-              <XAxis dataKey="month" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
+              <XAxis dataKey="displayDate" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
               <YAxis 
                 stroke="#6b7280" 
                 axisLine={{ strokeWidth: 0.5 }}
                 tickLine={false}
                 tickFormatter={(value) => {
-                  if (value >= 1) return `${value.toFixed(1)}M`
-                  return `${(value * 1000).toFixed(0)}K`
+                  if (value >= 1000) return `S$ ${(value / 1000).toFixed(0)}K`
+                  return `S$ ${value.toFixed(0)}`
                 }}
               />
-              <Tooltip content={<CustomBarTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-              <Legend verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '10px', paddingRight: '0px', marginTop: '-48px' }} />
-              <Bar dataKey="usage" fill="#DEC05F" name="Usage (M)" />
-            </BarChart>
+              <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#3b82f6', strokeWidth: 1, strokeDasharray: '5 5' }} />
+              <Area
+                type="monotone"
+                dataKey="amount"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                fill="url(#colorSales)"
+                name="Sales Amount"
+                activeDot={{ r: 5, fill: '#000000', stroke: '#3b82f6', strokeWidth: 2 }}
+                dot={false}
+              />
+            </AreaChart>
           </ResponsiveContainer>
         </ChartContainer>
       </div>
 
+      {/* Usage Volume Trend Chart */}
+      <ChartContainer title="Usage Volume Trend">
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={usageVolumeTrendChartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={1} opacity={0.2} vertical={false} />
+            <XAxis dataKey="displayDate" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
+            <YAxis 
+              stroke="#6b7280" 
+              axisLine={{ strokeWidth: 0.5 }}
+              tickLine={false}
+            />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#10b981', strokeWidth: 1, strokeDasharray: '5 5' }} />
+            <Line type="monotone" dataKey="volume" stroke="#10b981" strokeWidth={2} name="Usage Volume" />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartContainer>
+
       {/* Production Section */}
       <div className="flex items-center justify-between mb-6">
-        {/* Spacer untuk balance */}
         <div className="flex-1"></div>
-        
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Production</h2>
-        
-        {/* Spacer untuk balance */}
         <div className="flex-1"></div>
       </div>
 
@@ -297,201 +428,42 @@ export default function BankAccountPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <KPICard
             title="Total Accounts Created"
-            value={formatNumber(production.totalAccounts)}
-            change={production.growthRate}
+            value={formatNumber(wealthsData?.totalAccountCreated || 0)}
+            change={wealthsData?.growthRate || 0}
             icon={Users}
-            trend="up"
+            trend={wealthsData?.growthRate >= 0 ? "up" : "down"}
           />
           <KPICard
             title="Previous Month"
-            value={formatNumber(production.previousMonthAccounts)}
+            value={formatNumber(wealthsData?.previousMonthAccountCreated || 0)}
             change={0}
             icon={Users}
             trend="up"
           />
           <KPICard
             title="Growth Rate"
-            value={formatPercentage(production.growthRate)}
-            change={production.growthRate}
+            value={formatPercentage(wealthsData?.growthRate || 0)}
+            change={wealthsData?.growthRate || 0}
             icon={TrendingUp}
-            trend="up"
+            trend={wealthsData?.growthRate >= 0 ? "up" : "down"}
           />
         </div>
 
-        <ChartContainer
-          title="Daily Account Creation"
-        >
+        <ChartContainer title="Daily Account Creation">
           <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={productionChartData}>
-              <defs>
-                <linearGradient id="colorAccounts" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#DEC05F" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#DEC05F" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
+            <BarChart data={dailyAccountCreationChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" strokeWidth={1} opacity={0.2} vertical={false} />
-              <XAxis dataKey="date" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
+              <XAxis dataKey="displayDate" stroke="#6b7280" angle={-45} textAnchor="end" height={60} axisLine={{ strokeWidth: 0.5 }} tickLine={false} />
               <YAxis 
                 stroke="#6b7280" 
                 axisLine={{ strokeWidth: 0.5 }}
                 tickLine={false}
-                tickFormatter={(value) => {
-                  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`
-                  return value.toString()
-                }}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-              <Legend verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: '10px', paddingRight: '0px', marginTop: '-48px' }} />
-              <Area
-                type="monotone"
-                dataKey="accounts"
-                stroke="#DEC05F"
-                strokeWidth={2.5}
-                fill="url(#colorAccounts)"
-                name="New Accounts"
-                activeDot={{ r: 5, fill: '#000000', stroke: '#DEC05F', strokeWidth: 2 }}
-                dot={false}
-              />
-            </AreaChart>
+              <Bar dataKey="accounts" fill="#DEC05F" name="New Accounts" />
+            </BarChart>
           </ResponsiveContainer>
         </ChartContainer>
-      </div>
-
-      {/* Status Section */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          {/* Spacer untuk balance */}
-          <div className="flex-1"></div>
-          
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Account Status & Output</h2>
-          
-          {/* Spacer untuk balance */}
-          <div className="flex-1"></div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <KPICard
-            title="Total Accounts"
-            value={formatNumber(status?.totalAccounts || 0)}
-            change={0}
-            icon={Users}
-            trend="up"
-          />
-          <KPICard
-            title="Active Accounts"
-            value={formatNumber(status?.activeAccounts || 0)}
-            change={2.5}
-            icon={Users}
-            trend="up"
-          />
-          <KPICard
-            title="Output Volume"
-            value={formatNumber(status?.outputVolume || 0)}
-            change={5.2}
-            icon={TrendingUp}
-            trend="up"
-          />
-          <KPICard
-            title="Utilization Ratio"
-            value={`${(status?.utilizationRatio || 0).toFixed(1)}%`}
-            change={1.8}
-            icon={TrendingUp}
-            trend="up"
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-dark-card rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-900">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Account Status</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Total Accounts</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatNumber(status?.totalAccounts || 0)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Active Accounts</span>
-                <span className="text-lg font-bold text-green-500">
-                  {formatNumber(status?.activeAccounts || 0)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Inactive Accounts</span>
-                <span className="text-lg font-bold text-gray-500">
-                  {formatNumber((status?.totalAccounts || 0) - (status?.activeAccounts || 0))}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-dark-card rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-900">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Output Metrics</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Output Volume</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatNumber(status?.outputVolume || 0)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Utilization Ratio</span>
-                <span className="text-lg font-bold text-gold-500">
-                  {(status?.utilizationRatio || 0).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Avg per Account</span>
-                <span className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatNumber((status?.outputVolume || 0) / (status?.activeAccounts || 1))}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Summary Table */}
-      <div className="bg-white dark:bg-dark-card rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-900">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Monthly Summary</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-900">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">
-                  Month
-                </th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">
-                  Rented Accounts
-                </th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">
-                  Usage Amount
-                </th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">
-                  Avg per Account
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {bankAccountData.monthlyTrend.map((month, idx) => (
-                <tr
-                  key={idx}
-                  className="border-b border-gray-100 dark:border-gray-900 hover:bg-gold-100 dark:hover:bg-gold-500/20"
-                >
-                  <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">{month.month}</td>
-                  <td className="py-3 px-4 text-sm text-gray-900 dark:text-white text-right">
-                    {formatNumber(month.rented)}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-900 dark:text-white text-right">
-                    {formatCurrency(month.usage, 'MYR')}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-900 dark:text-white text-right">
-                    {formatCurrency(month.usage / month.rented, 'MYR')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   )

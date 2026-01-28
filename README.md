@@ -41,7 +41,7 @@ npm install
 
 ### Environment Setup
 
-**PENTING**: Buat file `.env.local` di root project dengan isi:
+**PENTING**: Buat file `.env` di root project dengan isi:
 
 ```env
 NEXTAUTH_URL=http://localhost:3000
@@ -50,7 +50,7 @@ NEXTAUTH_SECRET=nexsight-dashboard-secret-key-change-in-production-2024
 
 Atau copy dari `.env.example`:
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
 
 ### Development
@@ -183,11 +183,11 @@ https://nexsight-tau.vercel.app
 
 ### Error: [next-auth][error][NO_SECRET]
 
-Pastikan file `.env.local` sudah dibuat dengan `NEXTAUTH_SECRET` dan `NEXTAUTH_URL`.
+Pastikan file `.env` sudah dibuat dengan `NEXTAUTH_SECRET` dan `NEXTAUTH_URL`.
 
 ### Error: [next-auth][warn][NEXTAUTH_URL]
 
-Set `NEXTAUTH_URL` di `.env.local` sesuai environment Anda.
+Set `NEXTAUTH_URL` di `.env` sesuai environment Anda.
 
 ## License
 

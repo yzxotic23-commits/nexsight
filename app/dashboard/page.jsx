@@ -1,21 +1,15 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { signOut, useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { logout } from '@/lib/auth'
 import { useToast } from '@/lib/toast-context'
 import Link from 'next/link'
 import { useFilterStore } from '@/lib/stores/filterStore'
 import { useDashboardStore } from '@/lib/stores/dashboardStore'
-import {
-  getMarketProcessingData,
-  getDepositData,
-  getWithdrawData,
-  getWealthAccountProductionData,
-  getWealthAccountStatusData,
-  getBankAccountData,
-} from '@/lib/utils/mockData'
+// Removed mockData imports - using real data from Supabase
 import { formatCurrency, formatNumber, formatPercentage } from '@/lib/utils/formatters'
-import { subDays, startOfDay, endOfDay, subMonths, startOfMonth, endOfMonth } from 'date-fns'
+import { subDays, startOfDay, endOfDay, subMonths, startOfMonth, endOfMonth, format } from 'date-fns'
 import KPICard from '@/components/KPICard'
 import ThemeToggle from '@/components/ThemeToggle'
 import FilterBar from '@/components/FilterBar'
@@ -42,7 +36,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis
 
 export default function DashboardPage() {
   const { showToast } = useToast()
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { selectedMonth, setSelectedMonth } = useFilterStore()
   const { theme } = useThemeStore()
   const [selectedBankMarket, setSelectedBankMarket] = useState('SGD')
@@ -54,6 +48,10 @@ export default function DashboardPage() {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false)
   const userDropdownRef = useRef(null)
   const [marketWithdrawData, setMarketWithdrawData] = useState({ MYR: null, SGD: null, USC: null })
+  const [bankOwnerUsedAmount, setBankOwnerUsedAmount] = useState(0)
+  const [bankAccountRental, setBankAccountRental] = useState(0)
+  const [wPlusAccountOutput, setWPlusAccountOutput] = useState(0)
+  const [wPlusAccountRentalQuantity, setWPlusAccountRentalQuantity] = useState(0)
   
   // Color for SGD based on theme
   const sgdColor = theme === 'dark' ? '#C0C0C0' : '#1f2937' // Silver for dark mode, dark gray for light mode
@@ -108,59 +106,227 @@ export default function DashboardPage() {
 
   useEffect(() => {
     // Load all dashboard data
-    setMarketData(getMarketProcessingData(selectedMonth))
-    
-    // Get data for all 3 markets and aggregate
-    const myrDeposit = getDepositData(selectedMonth, 'MYR')
-    const sgdDeposit = getDepositData(selectedMonth, 'SGD')
-    const uscDeposit = getDepositData(selectedMonth, 'USC')
-    
-    const myrWithdraw = getWithdrawData(selectedMonth, 'MYR')
-    const sgdWithdraw = getWithdrawData(selectedMonth, 'SGD')
-    const uscWithdraw = getWithdrawData(selectedMonth, 'USC')
-    
-    // Store individual market data for Transaction Summary
-    setMarketDepositData({ MYR: myrDeposit, SGD: sgdDeposit, USC: uscDeposit })
-    setMarketWithdrawData({ MYR: myrWithdraw, SGD: sgdWithdraw, USC: uscWithdraw })
-    
-    // Aggregate deposit data from all markets
-    const aggregatedDeposit = {
-      month: myrDeposit.month,
-      currency: 'ALL',
-      currencySymbol: '',
-      totalCount: myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount,
-      totalAmount: myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount,
-      avgAmount: (myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount) / 
-                 (myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount),
-      avgProcessingTime: (myrDeposit.avgProcessingTime + sgdDeposit.avgProcessingTime + uscDeposit.avgProcessingTime) / 3,
-      dailyData: myrDeposit.dailyData.map((day, index) => ({
-        date: day.date,
-        count: day.count + (sgdDeposit.dailyData[index]?.count || 0) + (uscDeposit.dailyData[index]?.count || 0),
-        amount: day.amount + (sgdDeposit.dailyData[index]?.amount || 0) + (uscDeposit.dailyData[index]?.amount || 0),
-      }))
+    async function loadDashboardData() {
+      // Format dates for API
+      const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
+      const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+      
+      // Fetch Deposit data from API
+      try {
+        // Fetch MYR deposit data
+        const myrDepositResponse = await fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR`)
+        const myrDepositResult = await myrDepositResponse.json()
+        
+        let myrDeposit = {
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          currency: 'MYR',
+          currencySymbol: 'RM',
+          totalCount: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          avgProcessingTime: 0,
+          dailyData: []
+        }
+        
+        if (myrDepositResult.success && myrDepositResult.data) {
+          const data = myrDepositResult.data
+          myrDeposit = {
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            currency: 'MYR',
+            currencySymbol: 'RM',
+            totalCount: data.totalTransaction || 0,
+            totalAmount: 0, // Amount not available in API
+            avgAmount: 0,
+            avgProcessingTime: data.avgProcessingTime || 0,
+            dailyData: (data.dailyData || []).map(day => ({
+              date: day.date,
+              count: day.count || 0,
+              amount: 0
+            }))
+          }
+        }
+        
+        // SGD and USC deposit data (all 0)
+        const sgdDeposit = {
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          currency: 'SGD',
+          currencySymbol: 'S$',
+          totalCount: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          avgProcessingTime: 0,
+          dailyData: []
+        }
+        
+        const uscDeposit = {
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          currency: 'USC',
+          currencySymbol: 'US$',
+          totalCount: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          avgProcessingTime: 0,
+          dailyData: []
+        }
+        
+        // Store individual market data for Transaction Summary
+        setMarketDepositData({ MYR: myrDeposit, SGD: sgdDeposit, USC: uscDeposit })
+        
+        // Aggregate deposit data from all markets
+        const aggregatedDeposit = {
+          month: myrDeposit.month,
+          currency: 'ALL',
+          currencySymbol: '',
+          totalCount: myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount,
+          totalAmount: myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount,
+          avgAmount: (myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount) > 0
+            ? (myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount) / 
+              (myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount)
+            : 0,
+          avgProcessingTime: (myrDeposit.avgProcessingTime + sgdDeposit.avgProcessingTime + uscDeposit.avgProcessingTime) / 3,
+          dailyData: myrDeposit.dailyData.map((day, index) => ({
+            date: day.date,
+            count: day.count + (sgdDeposit.dailyData[index]?.count || 0) + (uscDeposit.dailyData[index]?.count || 0),
+            amount: day.amount + (sgdDeposit.dailyData[index]?.amount || 0) + (uscDeposit.dailyData[index]?.amount || 0),
+          }))
+        }
+        
+        setDepositData(aggregatedDeposit)
+      } catch (error) {
+        console.error('Error loading deposit data:', error)
+        // On error, set all to 0
+        const emptyDeposit = {
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          currency: 'ALL',
+          currencySymbol: '',
+          totalCount: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          avgProcessingTime: 0,
+          dailyData: []
+        }
+        setMarketDepositData({ 
+          MYR: { ...emptyDeposit, currency: 'MYR', currencySymbol: 'RM' },
+          SGD: { ...emptyDeposit, currency: 'SGD', currencySymbol: 'S$' },
+          USC: { ...emptyDeposit, currency: 'USC', currencySymbol: 'US$' }
+        })
+        setDepositData(emptyDeposit)
+      }
+      
+      // Withdraw data (all 0 for now)
+      const myrWithdraw = {
+        month: format(selectedMonth.start, 'MMMM yyyy'),
+        currency: 'MYR',
+        currencySymbol: 'RM',
+        totalCount: 0,
+        totalAmount: 0,
+        avgAmount: 0,
+        avgProcessingTime: 0,
+        dailyData: []
+      }
+      
+      const sgdWithdraw = {
+        month: format(selectedMonth.start, 'MMMM yyyy'),
+        currency: 'SGD',
+        currencySymbol: 'S$',
+        totalCount: 0,
+        totalAmount: 0,
+        avgAmount: 0,
+        avgProcessingTime: 0,
+        dailyData: []
+      }
+      
+      const uscWithdraw = {
+        month: format(selectedMonth.start, 'MMMM yyyy'),
+        currency: 'USC',
+        currencySymbol: 'US$',
+        totalCount: 0,
+        totalAmount: 0,
+        avgAmount: 0,
+        avgProcessingTime: 0,
+        dailyData: []
+      }
+      
+      setMarketWithdrawData({ MYR: myrWithdraw, SGD: sgdWithdraw, USC: uscWithdraw })
+      
+      // Aggregate withdraw data from all markets
+      const aggregatedWithdraw = {
+        month: myrWithdraw.month,
+        currency: 'ALL',
+        currencySymbol: '',
+        totalCount: 0,
+        totalAmount: 0,
+        avgAmount: 0,
+        avgProcessingTime: 0,
+        dailyData: []
+      }
+      
+      setWithdrawData(aggregatedWithdraw)
+      
+      // Market Processing Data - not yet implemented, set to empty structure
+      setMarketData({
+        month: format(selectedMonth.start, 'MMMM yyyy'),
+        totalTransactions: 0,
+        totalVolume: 0,
+        markets: [
+          { market: 'MYR', transactions: 0, volume: 0, contribution: 0 },
+          { market: 'SGD', transactions: 0, volume: 0, contribution: 0 },
+          { market: 'USC', transactions: 0, volume: 0, contribution: 0 }
+        ]
+      })
+      
+      // Wealth Account Data - fetch from API
+      try {
+        const wealthResponse = await fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`)
+        const wealthResult = await wealthResponse.json()
+        
+        if (wealthResult.success && wealthResult.data) {
+          const wealthData = wealthResult.data
+          setWealthAccountData({
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            totalAccounts: wealthData.totalAccountCreated || 0,
+            previousMonthAccounts: wealthData.previousMonthAccountCreated || 0,
+            growthRate: wealthData.growthRate || 0,
+            dailyData: (wealthData.dailyAccountCreation || []).map(day => ({
+              date: day.date,
+              accounts: day.accounts || 0
+            }))
+          })
+        } else {
+          // Set to 0 if no data
+          setWealthAccountData({
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            totalAccounts: 0,
+            previousMonthAccounts: 0,
+            growthRate: 0,
+            dailyData: []
+          })
+        }
+      } catch (error) {
+        console.error('Error loading wealth account data:', error)
+        setWealthAccountData({
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          totalAccounts: 0,
+          previousMonthAccounts: 0,
+          growthRate: 0,
+          dailyData: []
+        })
+      }
+      
+      // Bank Account Data - not yet implemented, set to empty structure
+      setBankAccountData({
+        month: format(selectedMonth.start, 'MMMM yyyy'),
+        totalRented: 0,
+        previousMonthRented: 0,
+        rentalTrend: 0,
+        totalUsageAmount: 0,
+        avgUsagePerAccount: 0,
+        usageEfficiencyRatio: 0,
+        monthlyTrend: []
+      })
     }
     
-    // Aggregate withdraw data from all markets
-    const aggregatedWithdraw = {
-      month: myrWithdraw.month,
-      currency: 'ALL',
-      currencySymbol: '',
-      totalCount: myrWithdraw.totalCount + sgdWithdraw.totalCount + uscWithdraw.totalCount,
-      totalAmount: myrWithdraw.totalAmount + sgdWithdraw.totalAmount + uscWithdraw.totalAmount,
-      avgAmount: (myrWithdraw.totalAmount + sgdWithdraw.totalAmount + uscWithdraw.totalAmount) / 
-                 (myrWithdraw.totalCount + sgdWithdraw.totalCount + uscWithdraw.totalCount),
-      avgProcessingTime: (myrWithdraw.avgProcessingTime + sgdWithdraw.avgProcessingTime + uscWithdraw.avgProcessingTime) / 3,
-      dailyData: myrWithdraw.dailyData.map((day, index) => ({
-        date: day.date,
-        count: day.count + (sgdWithdraw.dailyData[index]?.count || 0) + (uscWithdraw.dailyData[index]?.count || 0),
-        amount: day.amount + (sgdWithdraw.dailyData[index]?.amount || 0) + (uscWithdraw.dailyData[index]?.amount || 0),
-      }))
-    }
-    
-    setDepositData(aggregatedDeposit)
-    setWithdrawData(aggregatedWithdraw)
-    setWealthAccountData(getWealthAccountProductionData(selectedMonth))
-    setBankAccountData(getBankAccountData(selectedMonth))
+    loadDashboardData()
   }, [selectedMonth, setMarketData, setDepositData, setWithdrawData, setWealthAccountData, setBankAccountData])
 
   // Close dropdown when clicking outside
@@ -204,11 +370,113 @@ export default function DashboardPage() {
   const sgdWithdrawAvgTime = marketWithdrawData.SGD?.avgProcessingTime || 0
   const usdWithdrawAvgTime = marketWithdrawData.USC?.avgProcessingTime || 0
 
-  // Calculate Bank Summary data
-  const bankOwnerUsedAmount = bankAccountData?.totalRented || 0
-  const bankAccountRental = bankAccountData?.totalRented || 0
-  const wPlusAccountOutput = wealthAccountData?.totalAccounts || 0
-  const wPlusAccountRentalQuantity = wealthAccountData?.totalAccounts || 0
+  // Fetch Bank Owner Used Amount from API
+  useEffect(() => {
+    async function fetchBankOwnerUsedAmount() {
+      try {
+        // Get current month in YYYY-MM format
+        const currentMonth = format(selectedMonth.start, 'yyyy-MM')
+        
+        const response = await fetch(`/api/bank-owner?month=${currentMonth}`)
+        const result = await response.json()
+        
+        if (result.success && result.data && Array.isArray(result.data)) {
+          // Calculate total from all date_values
+          let total = 0
+          result.data.forEach(item => {
+            if (item.date_values && typeof item.date_values === 'object') {
+              Object.values(item.date_values).forEach(value => {
+                const numValue = parseFloat(value) || 0
+                total += numValue
+              })
+            }
+          })
+          setBankOwnerUsedAmount(total)
+        } else {
+          setBankOwnerUsedAmount(0)
+        }
+      } catch (error) {
+        console.error('Error fetching bank owner used amount:', error)
+        setBankOwnerUsedAmount(0)
+      }
+    }
+    
+    fetchBankOwnerUsedAmount()
+  }, [selectedMonth])
+  
+  // Fetch Bank Account Rental (Total Account) from API - filtered by date range
+  useEffect(() => {
+    async function fetchBankAccountRental() {
+      try {
+        // Format dates for API (filter by start_date)
+        const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
+        const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+        
+        // Fetch bank price data filtered by start_date date range
+        const response = await fetch(`/api/bank-price?startDate=${startDate}&endDate=${endDate}`)
+        const result = await response.json()
+        
+        console.log('Bank Account Rental - API response:', {
+          success: result.success,
+          totalCount: result.data?.length || 0,
+          dateRange: { startDate, endDate },
+          hasData: Array.isArray(result.data) && result.data.length > 0
+        })
+        
+        if (result.success && result.data && Array.isArray(result.data)) {
+          // Count total accounts with start_date within the selected date range
+          const totalCount = result.data.length
+          console.log('Bank Account Rental - Setting count to:', totalCount)
+          setBankAccountRental(totalCount)
+        } else {
+          console.warn('Bank Account Rental - Invalid response:', {
+            success: result.success,
+            hasData: !!result.data,
+            isArray: Array.isArray(result.data),
+            error: result.error
+          })
+          setBankAccountRental(0)
+        }
+      } catch (error) {
+        console.error('Bank Account Rental - Error:', error)
+        setBankAccountRental(0)
+      }
+    }
+    
+    fetchBankAccountRental()
+  }, [selectedMonth])
+  
+  // Fetch W+ Account Output (Total Sales Quantity) and W+ Account Rental Quantity (Total Accounts Created) from API
+  useEffect(() => {
+    async function fetchWealthData() {
+      try {
+        // Format dates for API
+        const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
+        const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+        
+        const response = await fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`)
+        const result = await response.json()
+        
+        if (result.success && result.data) {
+          // W+ Account Output = Total Sales Quantity
+          setWPlusAccountOutput(result.data.totalSalesQuantity || 0)
+          // W+ Account Rental Quantity = Total Accounts Created
+          setWPlusAccountRentalQuantity(result.data.totalAccountCreated || 0)
+        } else {
+          setWPlusAccountOutput(0)
+          setWPlusAccountRentalQuantity(0)
+        }
+      } catch (error) {
+        console.error('Error fetching wealth data:', error)
+        setWPlusAccountOutput(0)
+        setWPlusAccountRentalQuantity(0)
+      }
+    }
+    
+    fetchWealthData()
+  }, [selectedMonth])
+  
+  // Bank Summary data is now fetched from API (using state variables above)
 
   return (
     <div className="space-y-8">
@@ -332,7 +600,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <KPICard
             title="Bank Owner Used Amount"
-            value={formatNumber(bankOwnerUsedAmount)}
+            value={formatNumber(bankOwnerUsedAmount, 2)}
             change={0}
             icon={Building2}
             trend="up"

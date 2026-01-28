@@ -1,6 +1,7 @@
 'use client'
 
-import { signOut, useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { logout } from '@/lib/auth'
 import { useState, useEffect, useRef } from 'react'
 import { useToast } from '@/lib/toast-context'
 import { Search, Bell, HelpCircle, Settings, User, ChevronDown, Power, ArrowLeft } from 'lucide-react'
@@ -11,7 +12,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 
 export default function TopBar() {
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { selectedMonth, setSelectedMonth } = useFilterStore()
   const pathname = usePathname()
   const { showToast } = useToast()
@@ -107,10 +108,10 @@ export default function TopBar() {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-medium text-gray-900 dark:text-white">
-              {session?.user?.name || 'Martin Septimus'}
+              {session?.name || 'Admin User'}
             </span>
             <span className="text-xs text-gray-500 dark:text-gray-300">
-              {session?.user?.role || 'Admin'}
+              {session?.role || 'Admin'}
             </span>
           </div>
           <div className="relative" ref={userDropdownRef}>
@@ -124,12 +125,13 @@ export default function TopBar() {
             {isUserDropdownOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-dark-card border border-gray-200 dark:border-gray-900 rounded-lg shadow-lg z-50">
                 <button
-                    onClick={() => {
+                    onClick={async () => {
                       showToast('Logging out...', 'success')
-                      setTimeout(() => {
-                        signOut({ callbackUrl: '/' })
-                      }, 500)
                       setIsUserDropdownOpen(false)
+                      setTimeout(async () => {
+                        await logout()
+                        window.location.href = '/'
+                      }, 500)
                     }}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors flex items-center gap-2 first:rounded-t-lg last:rounded-b-lg"
                 >

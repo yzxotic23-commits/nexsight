@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { signOut, useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
+import { logout } from '@/lib/auth'
 import { Search, Bell, Settings, User, Calendar, ChevronDown, ChevronUp } from 'lucide-react'
 import ThemeToggle from './ThemeToggle'
 import { useFilterStore } from '@/lib/stores/filterStore'
 import { startOfMonth, endOfMonth, format, subMonths } from 'date-fns'
 
 export default function Header() {
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { selectedMonth, setSelectedMonth } = useFilterStore()
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false)
   const monthDropdownRef = useRef(null)
@@ -118,14 +119,17 @@ export default function Header() {
           </div>
           <div className="flex flex-col">
             <span className="text-sm font-medium text-gray-900 dark:text-white">
-              {session?.user?.name || 'Admin User'}
+              {session?.name || 'Admin User'}
             </span>
             <span className="text-xs text-gray-500 dark:text-gray-300">
-              {session?.user?.role || 'admin'}
+              {session?.role || 'admin'}
             </span>
           </div>
           <button
-            onClick={() => signOut({ callbackUrl: '/' })}
+            onClick={async () => {
+              await logout()
+              window.location.href = '/'
+            }}
             className="ml-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
           >
             Logout

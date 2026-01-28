@@ -13,7 +13,7 @@ import { ArrowUpCircle, ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settin
 import { useThemeStore } from '@/lib/stores/themeStore'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
-import { useSession, signOut } from 'next-auth/react'
+import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
 
 // Custom Tooltip Component - Updated design
@@ -117,7 +117,7 @@ const CustomBarTooltip = ({ active, payload, label }) => {
 
 export default function WithdrawMonitorPage() {
   const { showToast } = useToast()
-  const { data: session } = useSession()
+  const { user: session } = useAuth()
   const { selectedMonth, selectedCurrency } = useFilterStore()
   const { withdrawData, setWithdrawData } = useDashboardStore()
   const { theme } = useThemeStore()
@@ -158,20 +158,15 @@ export default function WithdrawMonitorPage() {
     return <div>Loading...</div>
   }
 
-  // Prepare chart data - daily breakdown
-  const maxCount = Math.max(...withdrawData.dailyData.map((day) => day.count))
+  // Prepare chart data - daily breakdown (all 0 since no data in Supabase)
   const dailyChartData = withdrawData.dailyData.map((day) => {
-    const count = day.count
-    const remaining = maxCount - count
-    // Highlight the bar with highest value
-    const isHighlighted = count === maxCount
     return {
       date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      count: day.count,
-      amount: day.amount / 1000, // Convert to thousands
-      filled: count,
-      remaining: remaining,
-      isHighlighted: isHighlighted,
+      count: 0,
+      amount: 0,
+      filled: 0,
+      remaining: 0,
+      isHighlighted: false,
     }
   })
 
@@ -190,64 +185,12 @@ export default function WithdrawMonitorPage() {
   
   // Calculate KPI data based on selected currency and brand
   const calculateOverviewData = () => {
-    const totalDays = withdrawData.dailyData.length
-    let totalTransaction = 0
-    let totalTransAutomation = 0
-    let totalProcessingTime = 0
-    let totalOver60s = 0
-    
-    withdrawData.dailyData.forEach((day, index) => {
-      if (selectedCurrency === 'ALL') {
-        // Sum all markets
-        totalTransaction += day.count
-        totalTransAutomation += Math.floor(day.count * 0.9)
-        totalProcessingTime += 25 + (index % 10) * 1.5
-        totalOver60s += Math.floor(day.count * 0.02)
-      } else if (selectedCurrency === 'MYR') {
-        const myrCount = Math.floor(day.count * 0.4)
-        totalTransaction += myrCount
-        totalTransAutomation += Math.floor(myrCount * 0.9)
-        totalProcessingTime += 25 + (index % 10) * 1.5 + (Math.sin(index * 7) * 10000) % 1 * 5
-        totalOver60s += Math.floor(myrCount * 0.02)
-      } else if (selectedCurrency === 'SGD') {
-        if (selectedBrand === 'ALL') {
-          // Sum all brands
-          const sgdCount = Math.floor(day.count * 0.35)
-          totalTransaction += sgdCount
-          totalTransAutomation += Math.floor(sgdCount * 0.9)
-          totalProcessingTime += 28 + (index % 10) * 1.5 + (Math.sin(index * 7) * 10000) % 1 * 5
-          totalOver60s += Math.floor(sgdCount * 0.02)
-        } else {
-          // Specific brand
-          const brandMultiplier = {
-            'WBSG': 1.2,
-            'M24SG': 1.0,
-            'OK188SG': 0.9,
-            'OXSG': 0.8,
-            'FWSG': 0.7,
-            'ABSG': 0.6
-          }[selectedBrand] || 1
-          
-          const sgdCount = Math.floor(day.count * 0.35 * brandMultiplier)
-          totalTransaction += sgdCount
-          totalTransAutomation += Math.floor(sgdCount * 0.9)
-          totalProcessingTime += (28 + (index % 10) * 1.5) * brandMultiplier
-          totalOver60s += Math.floor(sgdCount * 0.02)
-        }
-      } else if (selectedCurrency === 'USC') {
-        const uscCount = Math.floor(day.count * 0.25)
-        totalTransaction += uscCount
-        totalTransAutomation += Math.floor(uscCount * 0.9)
-        totalProcessingTime += 22 + (index % 10) * 1.5 + (Math.sin(index * 7) * 10000) % 1 * 5
-        totalOver60s += Math.floor(uscCount * 0.02)
-      }
-    })
-    
+    // Return 0 for all currencies (no data in Supabase yet)
     return {
-      totalTransaction,
-      totalTransAutomation,
-      avgPTimeAutomation: totalDays > 0 ? totalProcessingTime / totalDays : 0,
-      transOver60sAutomation: totalOver60s
+      totalTransaction: 0,
+      totalTransAutomation: 0,
+      avgPTimeAutomation: 0,
+      transOver60sAutomation: 0
     }
   }
   
@@ -267,84 +210,57 @@ export default function WithdrawMonitorPage() {
     'ABSG': '#a78bfa'       // Purple
   }
 
-  // Chart data following date range - with all brands data for SGD
-  const chartData = withdrawData.dailyData.map((day, index) => {
+  // Chart data following date range - all 0 since no data in Supabase
+  const chartData = withdrawData.dailyData.map((day) => {
     const baseData = {
       date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     }
     
-    // Add data for each brand (only for SGD currency)
+    // Add data for each brand (only for SGD currency) - all 0
     if (selectedCurrency === 'SGD') {
       brands.slice(1).forEach((brand) => {
-        const multiplier = {
-          'WBSG': 1.2,
-          'M24SG': 1.0,
-          'OK188SG': 0.9,
-          'OXSG': 0.8,
-          'FWSG': 0.7,
-          'ABSG': 0.6
-        }[brand] || 1
-        
-        // Use index for consistent random values
-        const randomSeed = index * 7 + brand.charCodeAt(0)
-        const random = (Math.sin(randomSeed) * 10000) % 1
-        
-        baseData[`${brand}_overdueTrans`] = Math.floor(day.count * 0.15 * multiplier)
-        baseData[`${brand}_avgProcessingTime`] = (25 + random * 15) * multiplier
-        baseData[`${brand}_coverageRate`] = (85 + random * 10) * (multiplier * 0.9)
-        baseData[`${brand}_transactionVolume`] = Math.floor(day.count * multiplier)
+        baseData[`${brand}_overdueTrans`] = 0
+        baseData[`${brand}_avgProcessingTime`] = 0
+        baseData[`${brand}_coverageRate`] = 0
+        baseData[`${brand}_transactionVolume`] = 0
       })
     }
     
-    // Aggregate data for ALL or when not SGD
-    baseData.overdueTrans = Math.floor(day.count * 0.15)
-    baseData.avgProcessingTime = 25 + (index % 10) * 1.5
-    baseData.coverageRate = 85 + (index % 10) * 1
-    baseData.transactionVolume = day.count
+    // Aggregate data - all 0
+    baseData.overdueTrans = 0
+    baseData.avgProcessingTime = 0
+    baseData.coverageRate = 0
+    baseData.transactionVolume = 0
     
-    // Always add market data (MYR, SGD, USC) for all metrics when "ALL" is selected
-    const randomVariation = (Math.sin(index * 7) * 10000) % 1
-    baseData.myr_overdueTrans = Math.floor(day.count * 0.15 * 0.4)
-    baseData.myr_avgProcessingTime = 25 + (index % 10) * 1.5 + randomVariation * 5
-    baseData.myr_coverageRate = 85 + (index % 10) * 1 + randomVariation * 3
-    baseData.myr_transactionVolume = Math.floor(day.count * 0.4)
+    // Market data (MYR, SGD, USC) - all 0
+    baseData.myr_overdueTrans = 0
+    baseData.myr_avgProcessingTime = 0
+    baseData.myr_coverageRate = 0
+    baseData.myr_transactionVolume = 0
     
-    baseData.sgd_overdueTrans = Math.floor(day.count * 0.15 * 0.35)
-    baseData.sgd_avgProcessingTime = 28 + (index % 10) * 1.5 + randomVariation * 5
-    baseData.sgd_coverageRate = 88 + (index % 10) * 1 + randomVariation * 3
-    baseData.sgd_transactionVolume = Math.floor(day.count * 0.35)
+    baseData.sgd_overdueTrans = 0
+    baseData.sgd_avgProcessingTime = 0
+    baseData.sgd_coverageRate = 0
+    baseData.sgd_transactionVolume = 0
     
-    baseData.usc_overdueTrans = Math.floor(day.count * 0.15 * 0.25)
-    baseData.usc_avgProcessingTime = 22 + (index % 10) * 1.5 + randomVariation * 5
-    baseData.usc_coverageRate = 82 + (index % 10) * 1 + randomVariation * 3
-    baseData.usc_transactionVolume = Math.floor(day.count * 0.25)
+    baseData.usc_overdueTrans = 0
+    baseData.usc_avgProcessingTime = 0
+    baseData.usc_coverageRate = 0
+    baseData.usc_transactionVolume = 0
     
     return baseData
   })
 
-  // Slow Transaction Data (Processing time > 5 minutes = 300 seconds)
+  // Slow Transaction Data (Processing time > 5 minutes = 300 seconds) - all 0
   const slowTransactionData = {
-    totalSlowTransaction: 245,
-    avgProcessingTime: 385.5,
-        brand: 'WBSG',
-    details: [
-      { brand: 'WBSG', customerName: 'Customer A', amount: 1200, processingTime: 305, completed: '2 hours ago' },
-      { brand: 'M24SG', customerName: 'Customer B', amount: 850, processingTime: 318, completed: '5 hours ago' },
-      { brand: 'OK188SG', customerName: 'Customer C', amount: 3500, processingTime: 375, completed: '1 day ago' },
-      { brand: 'WBSG', customerName: 'Customer D', amount: 2100, processingTime: 382, completed: '1 day ago' },
-      { brand: 'OXSG', customerName: 'Customer E', amount: 950, processingTime: 323, completed: '3 hours ago' },
-    ]
+    totalSlowTransaction: 0,
+    avgProcessingTime: 0,
+    brand: 'N/A',
+    details: []
   }
 
-  // Case Volume Data
-  const caseVolumeData = [
-    { brand: 'WBSG', totalCase: 8.75, totalTransAutomation: 1250, totalOverdue: 245 },
-    { brand: 'M24SG', totalCase: 5, totalTransAutomation: 2100, totalOverdue: 180 },
-    { brand: 'OK188SG', totalCase: 3.75, totalTransAutomation: 1850, totalOverdue: 120 },
-    { brand: 'OXSG', totalCase: 2.5, totalTransAutomation: 1500, totalOverdue: 95 },
-    { brand: 'FWSG', totalCase: 1, totalTransAutomation: 980, totalOverdue: 45 },
-    { brand: 'ABSG', totalCase: 0, totalTransAutomation: 750, totalOverdue: 20 },
-  ]
+  // Case Volume Data - all 0
+  const caseVolumeData = []
 
 
   // Custom Tooltip for Case Volume
@@ -367,19 +283,8 @@ export default function WithdrawMonitorPage() {
     return null
   }
 
-  // Brand Comparison Data
-  const brandComparisonData = [
-    { brand: 'WBSG', avgTime: 72, coverageRate: 75 },
-    { brand: 'M24SG', avgTime: 48, coverageRate: 82 },
-    { brand: 'OK188SG', avgTime: 42, coverageRate: 88 },
-    { brand: 'OXSG', avgTime: 32, coverageRate: 92 },
-    { brand: 'FWSG', avgTime: 28, coverageRate: 95 },
-    { brand: 'ABSG', avgTime: 20, coverageRate: 98 },
-  ].map(item => ({
-    ...item,
-    color: item.avgTime <= 180 ? '#10b981' : item.avgTime <= 300 ? '#f59e0b' : '#ef4444',
-    status: item.avgTime <= 180 ? 'Fast' : item.avgTime <= 300 ? 'Moderate' : 'Slow'
-  }))
+  // Brand Comparison Data - all 0
+  const brandComparisonData = []
 
   // Custom Tooltip for Brand Comparison
   const BrandComparisonTooltip = ({ active, payload }) => {
