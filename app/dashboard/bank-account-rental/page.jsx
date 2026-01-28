@@ -82,30 +82,35 @@ export default function WealthAccountPage() {
         
         if (result.success) {
           // Map Supabase data to match component's expected format
-          const mappedData = result.data.map(item => ({
-            id: item.id,
-            supplier: item.supplier || 'WEALTH+',
-            bankAccountName: item.bank_account_name || '',
-            status: item.status || 'ACTIVE',
-            department: item.department || '',
-            sellOff: item.sell_off || '',
-            startDate: item.start_date 
-              ? (typeof item.start_date === 'string' 
-                  ? item.start_date.split('T')[0] 
-                  : item.start_date instanceof Date
-                    ? item.start_date.toISOString().split('T')[0]
-                    : item.start_date)
-              : '',
-            currency: item.currency || selectedMarket,
-            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-            addition: item.addition || '',
-            remark: item.remark || '',
-            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-            createdAt: item.created_at // Add created_at for sorting
-          }))
+          const mappedData = result.data.map(item => {
+            const rowData = {
+              id: item.id,
+              supplier: item.supplier || 'WEALTH+',
+              bankAccountName: item.bank_account_name || '',
+              status: item.status || 'ACTIVE',
+              department: item.department || '',
+              sellOff: item.sell_off || '',
+              startDate: item.start_date 
+                ? (typeof item.start_date === 'string' 
+                    ? item.start_date.split('T')[0] 
+                    : item.start_date instanceof Date
+                      ? item.start_date.toISOString().split('T')[0]
+                      : item.start_date)
+                : '',
+              currency: item.currency || selectedMarket,
+              rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+              commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+              markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+              sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+              addition: item.addition || '',
+              remark: item.remark || '',
+              paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+              createdAt: item.created_at // Add created_at for sorting
+            }
+            // Recalculate payment total based on formula when loading data
+            rowData.paymentTotal = calculatePaymentTotal(rowData)
+            return rowData
+          })
           
           // Sort by created_at DESC so newest rows appear at top
           mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -193,14 +198,74 @@ export default function WealthAccountPage() {
     fetchBankOwnerData()
   }, [selectedBankOwnerMonth, selectedMarket, showToast])
 
-  // Function to calculate payment total
-  const calculatePaymentTotal = (rentalCommission, commission) => {
-    // Remove commas and parse as float
-    const rental = parseFloat(String(rentalCommission).replace(/,/g, '')) || 0
-    const comm = parseFloat(String(commission).replace(/,/g, '')) || 0
-    const total = rental + comm
-    // Format with commas for thousands
-    return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // Function to calculate payment total based on Excel formula
+  // Formula: IF(E="OFF", H+I+L, IF(H=200, H+I+L, (H+L)*days_remaining/days_in_month + IF(I=38, I, I*days_remaining/days_in_month)))
+  // E = Sell-OFF, F = Start date, H = Rental Commission, I = Commission, L = Addition
+  const calculatePaymentTotal = (row) => {
+    const sellOff = String(row.sellOff || '').toUpperCase().trim()
+    const startDate = row.startDate
+    const rentalCommission = parseFloat(String(row.rentalCommission || 0).replace(/,/g, '')) || 0
+    const commission = parseFloat(String(row.commission || 0).replace(/,/g, '')) || 0
+    const addition = parseFloat(String(row.addition || 0).replace(/,/g, '')) || 0
+
+    // If Sell-OFF is "OFF", return H+I+L
+    if (sellOff === 'OFF') {
+      const total = rentalCommission + commission + addition
+      return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    // If Rental Commission is 200, return H+I+L
+    if (rentalCommission === 200) {
+      const total = rentalCommission + commission + addition
+      return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    // Calculate days remaining in month from start date
+    if (!startDate) {
+      // If no start date, return simple sum
+      const total = rentalCommission + commission + addition
+      return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    try {
+      const start = new Date(startDate)
+      const year = start.getFullYear()
+      const month = start.getMonth()
+      
+      // Get last day of month (EOMONTH equivalent)
+      const lastDayOfMonth = new Date(year, month + 1, 0)
+      const daysInMonth = lastDayOfMonth.getDate()
+      
+      // Get day of start date
+      const dayOfStart = start.getDate()
+      
+      // Calculate days remaining in month (including start date)
+      // DAY(EOMONTH(F3,0))-DAY(F3)+1
+      const daysRemaining = daysInMonth - dayOfStart + 1
+      
+      // Calculate prorated rental commission + addition
+      // (H+L) * days_remaining / days_in_month
+      const proratedRentalAndAddition = (rentalCommission + addition) * (daysRemaining / daysInMonth)
+      
+      // Calculate commission
+      // IF(I=38, I, I * days_remaining / days_in_month)
+      let proratedCommission
+      if (commission === 38) {
+        proratedCommission = commission
+      } else {
+        proratedCommission = commission * (daysRemaining / daysInMonth)
+      }
+      
+      // Total = prorated rental + addition + prorated commission
+      const total = proratedRentalAndAddition + proratedCommission
+      
+      return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    } catch (error) {
+      console.error('Error calculating payment total:', error)
+      // Fallback to simple sum
+      const total = rentalCommission + commission + addition
+      return total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
   }
 
   // Function to add new row
@@ -324,30 +389,35 @@ export default function WealthAccountPage() {
           const fetchResult = await fetchResponse.json()
           
           if (fetchResult.success) {
-            const mappedData = fetchResult.data.map(item => ({
-              id: item.id,
-              supplier: item.supplier || 'WEALTH+',
-              bankAccountName: item.bank_account_name || '',
-              status: item.status || 'ACTIVE',
-              department: item.department || '',
-              sellOff: item.sell_off || '',
-              startDate: item.start_date 
-              ? (typeof item.start_date === 'string' 
-                  ? item.start_date.split('T')[0] 
-                  : item.start_date instanceof Date
-                    ? item.start_date.toISOString().split('T')[0]
-                    : item.start_date)
-              : '',
-              currency: item.currency || selectedMarket,
-              rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-              commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-              markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-              sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-              addition: item.addition || '',
-              remark: item.remark || '',
-              paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-              createdAt: item.created_at
-            }))
+            const mappedData = fetchResult.data.map(item => {
+              const rowData = {
+                id: item.id,
+                supplier: item.supplier || 'WEALTH+',
+                bankAccountName: item.bank_account_name || '',
+                status: item.status || 'ACTIVE',
+                department: item.department || '',
+                sellOff: item.sell_off || '',
+                startDate: item.start_date 
+                  ? (typeof item.start_date === 'string' 
+                      ? item.start_date.split('T')[0] 
+                      : item.start_date instanceof Date
+                        ? item.start_date.toISOString().split('T')[0]
+                        : item.start_date)
+                  : '',
+                currency: item.currency || selectedMarket,
+                rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+                commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+                markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+                sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+                addition: item.addition || '',
+                remark: item.remark || '',
+                paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+                createdAt: item.created_at
+              }
+              // Recalculate payment total based on formula when loading data
+              rowData.paymentTotal = calculatePaymentTotal(rowData)
+              return rowData
+            })
             // Sort by created_at DESC
             mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
             setBankRentData(mappedData)
@@ -401,30 +471,35 @@ export default function WealthAccountPage() {
         const fetchResult = await fetchResponse.json()
         
         if (fetchResult.success) {
-          const mappedData = fetchResult.data.map(item => ({
-            id: item.id,
-            supplier: item.supplier || 'WEALTH+',
-            bankAccountName: item.bank_account_name || '',
-            status: item.status || 'ACTIVE',
-            department: item.department || '',
-            sellOff: item.sell_off || '',
-            startDate: item.start_date 
-              ? (typeof item.start_date === 'string' 
-                  ? item.start_date.split('T')[0] 
-                  : item.start_date instanceof Date
-                    ? item.start_date.toISOString().split('T')[0]
-                    : item.start_date)
-              : '',
-            currency: item.currency || selectedMarket,
-            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-            addition: item.addition || '',
-            remark: item.remark || '',
-            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-            createdAt: item.created_at
-          }))
+          const mappedData = fetchResult.data.map(item => {
+            const rowData = {
+              id: item.id,
+              supplier: item.supplier || 'WEALTH+',
+              bankAccountName: item.bank_account_name || '',
+              status: item.status || 'ACTIVE',
+              department: item.department || '',
+              sellOff: item.sell_off || '',
+              startDate: item.start_date 
+                ? (typeof item.start_date === 'string' 
+                    ? item.start_date.split('T')[0] 
+                    : item.start_date instanceof Date
+                      ? item.start_date.toISOString().split('T')[0]
+                      : item.start_date)
+                : '',
+              currency: item.currency || selectedMarket,
+              rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+              commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+              markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+              sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+              addition: item.addition || '',
+              remark: item.remark || '',
+              paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+              createdAt: item.created_at
+            }
+            // Recalculate payment total based on formula when loading data
+            rowData.paymentTotal = calculatePaymentTotal(rowData)
+            return rowData
+          })
           // Sort by created_at DESC
           mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           setBankRentData(mappedData)
@@ -443,12 +518,10 @@ export default function WealthAccountPage() {
     setBankRentData(bankRentData.map(row => {
       if (row.id === id) {
         const updated = { ...row, [field]: value }
-        // Auto calculate payment total when rental commission or commission changes
-        if (field === 'rentalCommission' || field === 'commission') {
-          updated.paymentTotal = calculatePaymentTotal(
-            field === 'rentalCommission' ? value : updated.rentalCommission,
-            field === 'commission' ? value : updated.commission
-          )
+        // Auto calculate payment total when any relevant field changes
+        if (field === 'rentalCommission' || field === 'commission' || field === 'addition' || 
+            field === 'sellOff' || field === 'startDate') {
+          updated.paymentTotal = calculatePaymentTotal(updated)
         }
         return updated
       }
@@ -968,8 +1041,22 @@ export default function WealthAccountPage() {
                         <input
                           type="text"
                           value={row.paymentTotal}
-                          readOnly
-                          className="w-full px-2 py-1.5 text-sm font-semibold text-gray-900 dark:text-white bg-transparent focus:outline-none cursor-not-allowed text-right"
+                          onChange={(e) => updateCell(row.id, 'paymentTotal', e.target.value)}
+                          onFocus={(e) => {
+                            // Store original value when focusing
+                            e.target.dataset.originalValue = row.paymentTotal
+                          }}
+                          onBlur={(e) => {
+                            // If user didn't change the value, recalculate based on formula
+                            if (e.target.value === e.target.dataset.originalValue) {
+                              const currentRow = bankRentData.find(r => r.id === row.id)
+                              if (currentRow) {
+                                const calculated = calculatePaymentTotal(currentRow)
+                                updateCell(row.id, 'paymentTotal', calculated)
+                              }
+                            }
+                          }}
+                          className="w-full px-2 py-1.5 text-sm font-semibold text-gray-900 dark:text-white bg-transparent border border-transparent focus:outline-none focus:border-2 focus:border-gold-500 focus:bg-gray-50 dark:focus:bg-gray-800 rounded transition-all text-right"
                         />
                       </td>
                       <td className="px-4 py-3 border border-gray-200 dark:border-gray-800">

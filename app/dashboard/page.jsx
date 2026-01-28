@@ -450,9 +450,9 @@ export default function DashboardPage() {
     fetchBankAccountRental()
   }, [selectedMonth])
   
-  // Fetch W+ Account Output (Total Sales Quantity) and W+ Account Rental Quantity (Total Accounts Created) from API
+  // Fetch W+ Account Rental Quantity (Total Sales Quantity from wealths+)
   useEffect(() => {
-    async function fetchWealthData() {
+    async function fetchWPlusAccountRentalQuantity() {
       try {
         // Format dates for API
         const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
@@ -462,22 +462,44 @@ export default function DashboardPage() {
         const result = await response.json()
         
         if (result.success && result.data) {
-          // W+ Account Output = Total Sales Quantity
-          setWPlusAccountOutput(result.data.totalSalesQuantity || 0)
-          // W+ Account Rental Quantity = Total Accounts Created
-          setWPlusAccountRentalQuantity(result.data.totalAccountCreated || 0)
+          // W+ Account Rental Quantity = Total Sales Quantity from wealths+
+          setWPlusAccountRentalQuantity(result.data.totalSalesQuantity || 0)
         } else {
-          setWPlusAccountOutput(0)
           setWPlusAccountRentalQuantity(0)
         }
       } catch (error) {
-        console.error('Error fetching wealth data:', error)
-        setWPlusAccountOutput(0)
+        console.error('Error fetching W+ Account Rental Quantity:', error)
         setWPlusAccountRentalQuantity(0)
       }
     }
     
-    fetchWealthData()
+    fetchWPlusAccountRentalQuantity()
+  }, [selectedMonth])
+
+  // Fetch W+ Account Output (from jira with label month and project WNLE, using created_at)
+  useEffect(() => {
+    async function fetchWPlusAccountOutput() {
+      try {
+        // Format dates for API (using created_at for date range)
+        const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
+        const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+        
+        // Fetch from API endpoint that gets WNLE count with month label
+        const response = await fetch(`/api/wealths/wnle-count?startDate=${startDate}&endDate=${endDate}`)
+        const result = await response.json()
+        
+        if (result.success) {
+          setWPlusAccountOutput(result.count || 0)
+        } else {
+          setWPlusAccountOutput(0)
+        }
+      } catch (error) {
+        console.error('Error fetching W+ Account Output:', error)
+        setWPlusAccountOutput(0)
+      }
+    }
+    
+    fetchWPlusAccountOutput()
   }, [selectedMonth])
   
   // Bank Summary data is now fetched from API (using state variables above)
