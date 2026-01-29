@@ -232,11 +232,24 @@ export default function DepositMonitorPage() {
           )
           const result = await response.json()
           
-          console.log('Deposit API response:', result)
-          
-          if (result.success) {
-            setRealDepositData(result.data)
-          } else {
+        console.log('Deposit API response:', result)
+        
+        if (result.success) {
+          console.log('Setting realDepositData:', {
+            totalTransaction: result.data?.totalTransaction,
+            hasDailyData: !!result.data?.dailyData,
+            dailyDataLength: result.data?.dailyData?.length,
+            hasChartData: !!result.data?.chartData,
+            chartDataKeys: result.data?.chartData ? Object.keys(result.data.chartData) : [],
+            sampleChartData: result.data?.chartData ? {
+              overdueTrans: Object.keys(result.data.chartData.overdueTrans || {}).length,
+              avgProcessingTime: Object.keys(result.data.chartData.avgProcessingTime || {}).length,
+              coverageRate: Object.keys(result.data.chartData.coverageRate || {}).length,
+              transactionVolume: Object.keys(result.data.chartData.transactionVolume || {}).length
+            } : null
+          })
+          setRealDepositData(result.data)
+        } else {
             console.error('Failed to fetch deposit data:', result.error)
             showToast('Failed to load deposit data', 'error')
             setRealDepositData(null)
@@ -393,6 +406,14 @@ export default function DepositMonitorPage() {
   const chartData = (() => {
     // Use real data for MYR, SGD, and USC
     if ((selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC') && realDepositData && realDepositData.dailyData && Array.isArray(realDepositData.dailyData)) {
+      console.log('Processing chartData for single currency:', {
+        currency: selectedCurrency,
+        brand: selectedBrand,
+        dailyDataLength: realDepositData.dailyData.length,
+        hasChartData: !!realDepositData.chartData,
+        sampleDailyData: realDepositData.dailyData.slice(0, 2)
+      })
+      
       return realDepositData.dailyData
         .sort((a, b) => new Date(a.date) - new Date(b.date)) // Sort by date ascending
         .map(day => {
