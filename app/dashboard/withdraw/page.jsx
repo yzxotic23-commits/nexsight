@@ -258,6 +258,18 @@ export default function WithdrawMonitorPage() {
     'ABSG': '#a78bfa'       // Purple
   }
 
+  // Helper to format processing time (seconds) to human readable (e.g., 2m 05s or 12.3s)
+  const formatProcessingTime = (seconds) => {
+    if (seconds === null || seconds === undefined) return '0.0s'
+    const sec = Number(seconds) || 0
+    if (sec >= 60) {
+      const m = Math.floor(sec / 60)
+      const s = Math.round(sec % 60)
+      return `${m}m ${s.toString().padStart(2, '0')}s`
+    }
+    return `${sec.toFixed(1)}s`
+  }
+
   // Chart data following date range - all 0 since no data in Supabase
   const chartData = withdrawData.dailyData.map((day) => {
     const baseData = {
@@ -442,7 +454,7 @@ export default function WithdrawMonitorPage() {
             />
             <KPICard
               title="Avg Processing Time"
-              value={`${(overviewData.avgPTimeAutomation || 0).toFixed(1)}s`}
+              value={formatProcessingTime(overviewData.avgPTimeAutomation)}
               change={0}
               icon={Clock}
               trend="neutral"
@@ -879,7 +891,15 @@ export default function WithdrawMonitorPage() {
                       <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(transaction.amount, selectedCurrency || 'SGD', 'S$')}
                         </td>
-                      <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">{transaction.processingTime}s</td>
+                      <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">
+                        <span className={`font-semibold ${
+                          transaction.processingTime > 300 ? 'text-red-600 dark:text-red-400' :
+                          transaction.processingTime > 240 ? 'text-orange-600 dark:text-orange-400' :
+                          'text-yellow-600 dark:text-yellow-400'
+                        }`}>
+                          {formatProcessingTime(transaction.processingTime)}
+                        </span>
+                      </td>
                         <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">{transaction.completed}</td>
                       </tr>
                   ))}
