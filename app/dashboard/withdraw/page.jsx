@@ -147,12 +147,55 @@ export default function WithdrawMonitorPage() {
   }, [isUserDropdownOpen, isBrandDropdownOpen])
 
   useEffect(() => {
-    setWithdrawData(getWithdrawData(selectedMonth, selectedCurrency))
-    // Reset brand to 'ALL' when currency changes
-    if (selectedCurrency !== 'SGD') {
-      setSelectedBrand('ALL')
+    async function fetchWithdrawData() {
+      // Reset brand to ALL when currency changes
+      if (selectedCurrency !== 'SGD') {
+        setSelectedBrand('ALL')
+      }
+
+      const formatLocalDate = (date) => {
+        const dateObj = date instanceof Date ? date : new Date(date)
+        const year = dateObj.getFullYear()
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+      }
+
+      const startDate = formatLocalDate(selectedMonth.start)
+      const endDate = formatLocalDate(selectedMonth.end)
+
+      try {
+        const response = await fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`)
+        const result = await response.json()
+        if (result.success && result.data) {
+          const d = result.data
+          // Map API response to withdrawData shape used by UI
+          const mapped = {
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            currency: selectedCurrency,
+            currencySymbol: selectedCurrency === 'MYR' ? 'RM' : selectedCurrency === 'SGD' ? 'S$' : 'US$',
+            totalCount: d.totalTransaction || 0,
+            totalAmount: d.dailyData ? d.dailyData.reduce((s, r) => s + (r.amount || 0), 0) : 0,
+            avgAmount: 0,
+            avgProcessingTime: d.avgProcessingTime || 0,
+            dailyData: (d.dailyData || []).map(day => ({ date: day.date, count: day.count || 0, amount: day.amount || 0 })),
+            slowTransactions: d.slowTransactions || [],
+            slowTransactionSummary: d.slowTransactionSummary || { totalSlowTransaction: 0, avgProcessingTime: 0, brand: 'N/A' },
+            brandComparison: d.brandComparison || []
+          }
+          setWithdrawData(mapped)
+        } else {
+          // fallback to mock
+          setWithdrawData(getWithdrawData(selectedMonth, selectedCurrency))
+        }
+      } catch (error) {
+        console.error('Error fetching withdraw data:', error)
+        setWithdrawData(getWithdrawData(selectedMonth, selectedCurrency))
+      }
     }
-  }, [selectedMonth, selectedCurrency, setWithdrawData])
+
+    fetchWithdrawData()
+  }, [selectedMonth, selectedCurrency, selectedBrand, setWithdrawData])
 
   if (!withdrawData) {
     return <div>Loading...</div>
