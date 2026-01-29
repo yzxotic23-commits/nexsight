@@ -185,15 +185,20 @@ export default function WithdrawMonitorPage() {
   
   // Calculate KPI data based on selected currency and brand
   const calculateOverviewData = () => {
-    // Return 0 for all currencies (no data in Supabase yet)
+    const totalTransaction = withdrawData?.totalCount || 0
+    const avgPTime = withdrawData?.avgProcessingTime || 0
+    // If withdrawData provides slow/overdue list use its length, otherwise fallback to 0
+    const transOver5m = Array.isArray(withdrawData?.slowTransactions)
+      ? withdrawData.slowTransactions.length
+      : (withdrawData?.transOver5m || 0)
+
     return {
-      totalTransaction: 0,
-      totalTransAutomation: 0,
-      avgPTimeAutomation: 0,
-      transOver60sAutomation: 0
+      totalTransaction,
+      avgPTimeAutomation: avgPTime,
+      transOver5m
     }
   }
-  
+
   const overviewData = calculateOverviewData()
 
   // Color for SGD based on theme
@@ -384,7 +389,7 @@ export default function WithdrawMonitorPage() {
       {activeTab === 'Overview' && (
         <div className="space-y-6">
           {/* KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <KPICard
               title="Total Transaction"
               value={formatNumber(overviewData.totalTransaction)}
@@ -393,22 +398,15 @@ export default function WithdrawMonitorPage() {
               trend="neutral"
             />
             <KPICard
-              title="Total Trans Automation"
-              value={formatNumber(overviewData.totalTransAutomation)}
-              change={0}
-              icon={TrendingUp}
-              trend="neutral"
-            />
-            <KPICard
               title="Avg Processing Time"
-              value={`${overviewData.avgPTimeAutomation.toFixed(1)}s`}
+              value={`${(overviewData.avgPTimeAutomation || 0).toFixed(1)}s`}
               change={0}
               icon={Clock}
               trend="neutral"
             />
             <KPICard
               title="Trans > 5m"
-              value={formatNumber(overviewData.transOver60sAutomation)}
+              value={formatNumber(overviewData.transOver5m)}
               change={0}
               icon={AlertCircle}
               trend="neutral"

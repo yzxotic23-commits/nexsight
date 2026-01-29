@@ -67,8 +67,11 @@ export async function GET(request) {
 
     // Filter by brand using 'line' column if provided and not 'ALL'
     if (brand && brand !== 'ALL') {
-      query = query.eq('line', brand)
-      console.log(`Filtering by brand: ${brand} in table ${tableName}`)
+      const brandTrim = String(brand).trim()
+      // Use case-insensitive substring match to tolerate variants like extra suffix/prefix or casing differences
+      // e.g. dropdown may show "OK188" while DB stores "OK188SG" — substring match will still work.
+      query = query.ilike('line', `%${brandTrim}%`)
+      console.log(`Applying brand filter (ilike substring) '${brandTrim}' on ${tableName}`)
     }
 
     const { data: depositData, error } = await query
