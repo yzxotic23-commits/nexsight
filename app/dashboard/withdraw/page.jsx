@@ -5,6 +5,7 @@ import { useFilterStore } from '@/lib/stores/filterStore'
 import { useDashboardStore } from '@/lib/stores/dashboardStore'
 import { getWithdrawData } from '@/lib/utils/mockData'
 import { formatCurrency, formatNumber, formatPercentage } from '@/lib/utils/formatters'
+import { format } from 'date-fns'
 import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
@@ -270,54 +271,69 @@ export default function WithdrawMonitorPage() {
     return `${sec.toFixed(1)}s`
   }
 
-  // Chart data following date range - all 0 since no data in Supabase
-  const chartData = withdrawData.dailyData.map((day) => {
+  // Chart data following date range - build from API response (withdrawData.chartData) if available
+  const chartData = (withdrawData.dailyData || []).map((day) => {
+    const dateKey = day.date
+    const formatted = new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     const baseData = {
-      date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      date: formatted,
+      originalDate: dateKey,
     }
-    
-    // Add data for each brand (only for SGD currency) - all 0
-    if (selectedCurrency === 'SGD') {
+
+    // Fill aggregate values from chartData if present
+    const c = withdrawData.chartData || {}
+    baseData.overdueTrans = c.overdueTrans?.[dateKey] || 0
+    baseData.avgProcessingTime = c.avgProcessingTime?.[dateKey] || 0
+    baseData.transactionVolume = c.transactionVolume?.[dateKey] || 0
+
+    // Market / brand fields
+    // If single currency selected, map into that currency prefix
+    const prefix = selectedCurrency ? selectedCurrency.toLowerCase() : 'sgd'
+    baseData[`${prefix}_overdueTrans`] = baseData.overdueTrans
+    baseData[`${prefix}_avgProcessingTime`] = baseData.avgProcessingTime
+    baseData[`${prefix}_transactionVolume`] = baseData.transactionVolume
+
+    // If SGD and a specific brand selected, map to brand_<metric>
+    if (selectedCurrency === 'SGD' && selectedBrand && selectedBrand !== 'ALL') {
+      baseData[`${selectedBrand}_overdueTrans`] = baseData.overdueTrans
+      baseData[`${selectedBrand}_avgProcessingTime`] = baseData.avgProcessingTime
+      baseData[`${selectedBrand}_transactionVolume`] = baseData.transactionVolume
+    } else if (selectedCurrency === 'SGD') {
+      // when SGD ALL, also provide per-brand fields if withdrawData provides brand breakdown (not implemented server-side)
       brands.slice(1).forEach((brand) => {
-        baseData[`${brand}_overdueTrans`] = 0
-        baseData[`${brand}_avgProcessingTime`] = 0
-        baseData[`${brand}_coverageRate`] = 0
-        baseData[`${brand}_transactionVolume`] = 0
+        baseData[`${brand}_overdueTrans`] = baseData[`${brand}_overdueTrans`] || 0
+        baseData[`${brand}_avgProcessingTime`] = baseData[`${brand}_avgProcessingTime`] || 0
+        baseData[`${brand}_transactionVolume`] = baseData[`${brand}_transactionVolume`] || 0
       })
     }
-    
-    // Aggregate data - all 0
-    baseData.overdueTrans = 0
-    baseData.avgProcessingTime = 0
-    baseData.coverageRate = 0
-    baseData.transactionVolume = 0
-    
-    // Market data (MYR, SGD, USC) - all 0
-    baseData.myr_overdueTrans = 0
-    baseData.myr_avgProcessingTime = 0
-    baseData.myr_coverageRate = 0
-    baseData.myr_transactionVolume = 0
-    
-    baseData.sgd_overdueTrans = 0
-    baseData.sgd_avgProcessingTime = 0
-    baseData.sgd_coverageRate = 0
-    baseData.sgd_transactionVolume = 0
-    
-    baseData.usc_overdueTrans = 0
-    baseData.usc_avgProcessingTime = 0
-    baseData.usc_coverageRate = 0
-    baseData.usc_transactionVolume = 0
-    
+
+    // Ensure MYR/USC fields exist to avoid undefined in charts for ALL view
+    if (!baseData.myr_overdueTrans) baseData.myr_overdueTrans = 0
+    if (!baseData.myr_avgProcessingTime) baseData.myr_avgProcessingTime = 0
+    if (!baseData.myr_transactionVolume) baseData.myr_transactionVolume = 0
+    if (!baseData.sgd_overdueTrans) baseData.sgd_overdueTrans = 0
+    if (!baseData.sgd_avgProcessingTime) baseData.sgd_avgProcessingTime = 0
+    if (!baseData.sgd_transactionVolume) baseData.sgd_transactionVolume = 0
+    if (!baseData.usc_overdueTrans) baseData.usc_overdueTrans = 0
+    if (!baseData.usc_avgProcessingTime) baseData.usc_avgProcessingTime = 0
+    if (!baseData.usc_transactionVolume) baseData.usc_transactionVolume = 0
+
     return baseData
   })
 
-  // Slow Transaction Data (Processing time > 5 minutes = 300 seconds) - all 0
-  const slowTransactionData = {
-    totalSlowTransaction: 0,
-    avgProcessingTime: 0,
-    brand: 'N/A',
-    details: []
-  }
+  // Slow Transaction Data (Processing time > 5 minutes = 300 seconds)
+  const slowTransactionData = (() => {
+    const details = Array.isArray(withdrawData?.slowTransactions) ? withdrawData.slowTransactions : []
+    const total = details.length
+    const avg = total > 0 ? Math.round((details.reduce((s,d) => s + (Number(d.processingTime)||0), 0) / total) * 10) / 10 : 0
+    const topBrand = details.length > 0 ? details[0].brand : 'N/A'
+    return {
+      totalSlowTransaction: total,
+      avgProcessingTime: avg,
+      brand: topBrand,
+      details
+    }
+  })()
 
   // Case Volume Data - all 0
   const caseVolumeData = []
