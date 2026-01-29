@@ -282,15 +282,21 @@ export default function DashboardPage() {
         
         if (wealthResult.success && wealthResult.data) {
           const wealthData = wealthResult.data
+          
+          // Convert dailyAccountCreation object to array
+          const dailyDataArray = wealthData.dailyAccountCreation && typeof wealthData.dailyAccountCreation === 'object'
+            ? Object.entries(wealthData.dailyAccountCreation).map(([date, accounts]) => ({
+                date,
+                accounts
+              })).sort((a, b) => new Date(a.date) - new Date(b.date))
+            : []
+          
           setWealthAccountData({
             month: format(selectedMonth.start, 'MMMM yyyy'),
             totalAccounts: wealthData.totalAccountCreated || 0,
             previousMonthAccounts: wealthData.previousMonthAccountCreated || 0,
             growthRate: wealthData.growthRate || 0,
-            dailyData: (wealthData.dailyAccountCreation || []).map(day => ({
-              date: day.date,
-              accounts: day.accounts || 0
-            }))
+            dailyData: dailyDataArray
           })
         } else {
           // Set to 0 if no data
