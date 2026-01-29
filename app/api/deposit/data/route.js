@@ -71,14 +71,19 @@ export async function GET(request) {
     const { data: depositData, error } = await query
 
     if (error) {
-      console.error('Error fetching deposit data:', error)
+      console.error(`Error fetching deposit data from ${tableName}:`, error)
       return NextResponse.json(
         { error: 'Failed to fetch deposit data', details: error.message },
         { status: 500 }
       )
     }
 
-    console.log(`Fetched ${depositData?.length || 0} deposit records for ${currency}`)
+    console.log(`Fetched ${depositData?.length || 0} deposit records from ${tableName} (${currency}) for date range ${startDate} to ${endDate}`)
+    
+    // If no data found, log warning
+    if (!depositData || depositData.length === 0) {
+      console.warn(`⚠️ No data found in table ${tableName} for date range ${startDate} to ${endDate}${brand && brand !== 'ALL' ? ` and brand ${brand}` : ''}`)
+    }
 
     // Helper function to convert HH:MM:SS to seconds
     const timeToSeconds = (timeString) => {
