@@ -25,8 +25,10 @@ export async function GET(request) {
       tableName = 'deposit'
     } else if (currency === 'SGD') {
       tableName = 'deposit_sgd'
+    } else if (currency === 'USC') {
+      tableName = 'deposit_usc'
     } else {
-      // Return 0 for USC or other currencies not yet implemented
+      // Return 0 for other currencies not yet implemented
       console.log(`Currency ${currency} not yet implemented, returning 0 data`)
       return NextResponse.json({
         success: true,
@@ -56,7 +58,7 @@ export async function GET(request) {
       })
     }
 
-    // Build query for MYR or SGD
+    // Build query for MYR, SGD, or USC
     let query = supabaseDataServer
       .from(tableName)
       .select('*')

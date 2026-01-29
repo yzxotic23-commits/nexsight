@@ -111,12 +111,30 @@ export default function DashboardPage() {
       const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
       const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
       
-      // Fetch Deposit data from API
+      // Fetch ALL data in parallel for maximum speed
+      const [depositResults, wealthResult, bankOwnerResult, bankAccountResult, wnleResult] = await Promise.allSettled([
+        // Fetch all deposit currencies in parallel
+        Promise.all([
+          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR`).then(r => r.json()),
+          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD`).then(r => r.json()),
+          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC`).then(r => r.json())
+        ]),
+        // Fetch wealth data
+        fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`).then(r => r.json()),
+        // Fetch bank owner data
+        fetch(`/api/bank-owner?month=${format(selectedMonth.start, 'yyyy-MM')}&currency=SGD`).then(r => r.json()),
+        // Fetch bank account rental data
+        fetch(`/api/bank-price`).then(r => r.json()),
+        // Fetch WNLE count
+        fetch(`/api/wealths/wnle-count?startDate=${startDate}&endDate=${endDate}`).then(r => r.json())
+      ])
+      
+      // Process Deposit data
       try {
-        // Fetch MYR deposit data
-        const myrDepositResponse = await fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR`)
-        const myrDepositResult = await myrDepositResponse.json()
+        if (depositResults.status === 'fulfilled') {
+          const [myrDepositResult, sgdDepositResult, uscDepositResult] = depositResults.value
         
+        // Process MYR deposit data
         let myrDeposit = {
           month: format(selectedMonth.start, 'MMMM yyyy'),
           currency: 'MYR',
@@ -146,8 +164,8 @@ export default function DashboardPage() {
           }
         }
         
-        // SGD and USC deposit data (all 0)
-        const sgdDeposit = {
+        // Process SGD deposit data
+        let sgdDeposit = {
           month: format(selectedMonth.start, 'MMMM yyyy'),
           currency: 'SGD',
           currencySymbol: 'S$',
@@ -158,7 +176,26 @@ export default function DashboardPage() {
           dailyData: []
         }
         
-        const uscDeposit = {
+        if (sgdDepositResult.success && sgdDepositResult.data) {
+          const data = sgdDepositResult.data
+          sgdDeposit = {
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            currency: 'SGD',
+            currencySymbol: 'S$',
+            totalCount: data.totalTransaction || 0,
+            totalAmount: 0, // Amount not available in API
+            avgAmount: 0,
+            avgProcessingTime: data.avgProcessingTime || 0,
+            dailyData: (data.dailyData || []).map(day => ({
+              date: day.date,
+              count: day.count || 0,
+              amount: 0
+            }))
+          }
+        }
+        
+        // Process USC deposit data
+        let uscDeposit = {
           month: format(selectedMonth.start, 'MMMM yyyy'),
           currency: 'USC',
           currencySymbol: 'US$',
@@ -169,21 +206,49 @@ export default function DashboardPage() {
           dailyData: []
         }
         
+        if (uscDepositResult.success && uscDepositResult.data) {
+          const data = uscDepositResult.data
+          uscDeposit = {
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            currency: 'USC',
+            currencySymbol: 'US$',
+            totalCount: data.totalTransaction || 0,
+            totalAmount: 0, // Amount not available in API
+            avgAmount: 0,
+            avgProcessingTime: data.avgProcessingTime || 0,
+            dailyData: (data.dailyData || []).map(day => ({
+              date: day.date,
+              count: day.count || 0,
+              amount: 0
+            }))
+          }
+        }
+        
         // Store individual market data for Transaction Summary
         setMarketDepositData({ MYR: myrDeposit, SGD: sgdDeposit, USC: uscDeposit })
         
         // Aggregate deposit data from all markets
+        const totalCount = myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount
+        
+        // Calculate weighted average for processing time
+        const avgProcessingTime = totalCount > 0
+          ? (
+              (myrDeposit.avgProcessingTime * myrDeposit.totalCount) + 
+              (sgdDeposit.avgProcessingTime * sgdDeposit.totalCount) + 
+              (uscDeposit.avgProcessingTime * uscDeposit.totalCount)
+            ) / totalCount
+          : 0
+        
         const aggregatedDeposit = {
           month: myrDeposit.month,
           currency: 'ALL',
           currencySymbol: '',
-          totalCount: myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount,
+          totalCount,
           totalAmount: myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount,
-          avgAmount: (myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount) > 0
-            ? (myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount) / 
-              (myrDeposit.totalCount + sgdDeposit.totalCount + uscDeposit.totalCount)
+          avgAmount: totalCount > 0
+            ? (myrDeposit.totalAmount + sgdDeposit.totalAmount + uscDeposit.totalAmount) / totalCount
             : 0,
-          avgProcessingTime: (myrDeposit.avgProcessingTime + sgdDeposit.avgProcessingTime + uscDeposit.avgProcessingTime) / 3,
+          avgProcessingTime,
           dailyData: myrDeposit.dailyData.map((day, index) => ({
             date: day.date,
             count: day.count + (sgdDeposit.dailyData[index]?.count || 0) + (uscDeposit.dailyData[index]?.count || 0),
@@ -192,6 +257,7 @@ export default function DashboardPage() {
         }
         
         setDepositData(aggregatedDeposit)
+        }
       } catch (error) {
         console.error('Error loading deposit data:', error)
         // On error, set all to 0

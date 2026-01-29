@@ -82,6 +82,13 @@ export default function DepositMonitorPage() {
   // State for real deposit data from Supabase
   const [realDepositData, setRealDepositData] = useState(null)
   const [isLoadingDepositData, setIsLoadingDepositData] = useState(true)
+  
+  // State for ALL currency - stores data from MYR, SGD, and USC separately
+  const [allCurrencyData, setAllCurrencyData] = useState({
+    myr: null,
+    sgd: null,
+    usc: null
+  })
 
   const tabs = ['Overview', 'Brand Comparison', 'Slow Transaction', 'Case Volume']
   const [brands, setBrands] = useState(['ALL'])
@@ -189,26 +196,60 @@ export default function DepositMonitorPage() {
         const startDate = formatLocalDate(selectedMonth.start)
         const endDate = formatLocalDate(selectedMonth.end)
         
-        console.log('Fetching deposit data:', { startDate, endDate, currency: selectedCurrency, brand: selectedBrand })
-        
-        const response = await fetch(
-          `/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`
-        )
-        const result = await response.json()
-        
-        console.log('Deposit API response:', result)
-        
-        if (result.success) {
-          setRealDepositData(result.data)
-        } else {
-          console.error('Failed to fetch deposit data:', result.error)
-          showToast('Failed to load deposit data', 'error')
+        // If currency is "ALL", fetch data from all three currencies
+        if (selectedCurrency === 'ALL') {
+          console.log('Fetching ALL currencies data:', { startDate, endDate })
+          
+          const [myrResponse, sgdResponse, uscResponse] = await Promise.all([
+            fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`),
+            fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`),
+            fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`)
+          ])
+          
+          const [myrResult, sgdResult, uscResult] = await Promise.all([
+            myrResponse.json(),
+            sgdResponse.json(),
+            uscResponse.json()
+          ])
+          
+          console.log('ALL currencies response:', { myrResult, sgdResult, uscResult })
+          
+          // Store individual currency data
+          setAllCurrencyData({
+            myr: myrResult.success ? myrResult.data : null,
+            sgd: sgdResult.success ? sgdResult.data : null,
+            usc: uscResult.success ? uscResult.data : null
+          })
+          
+          // Clear single currency data
           setRealDepositData(null)
+        } else {
+          // Fetch single currency
+          console.log('Fetching deposit data:', { startDate, endDate, currency: selectedCurrency, brand: selectedBrand })
+          
+          const response = await fetch(
+            `/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`
+          )
+          const result = await response.json()
+          
+          console.log('Deposit API response:', result)
+          
+          if (result.success) {
+            setRealDepositData(result.data)
+          } else {
+            console.error('Failed to fetch deposit data:', result.error)
+            showToast('Failed to load deposit data', 'error')
+            setRealDepositData(null)
+          }
+          
+          // Clear ALL currency data
+          setAllCurrencyData({ myr: null, sgd: null, usc: null })
         }
       } catch (error) {
         console.error('Error fetching deposit data:', error)
         showToast('Error loading deposit data', 'error')
         setRealDepositData(null)
+        setAllCurrencyData({ myr: null, sgd: null, usc: null })
       } finally {
         setIsLoadingDepositData(false)
       }
@@ -223,25 +264,47 @@ export default function DepositMonitorPage() {
 
   // Calculate KPI data based on selected currency and brand
   const calculateOverviewData = () => {
-    // Use real data if available (for MYR)
-    if (realDepositData && selectedCurrency === 'MYR') {
+    // For "ALL" currency - aggregate data from MYR, SGD, and USC
+    if (selectedCurrency === 'ALL' && (allCurrencyData.myr || allCurrencyData.sgd || allCurrencyData.usc)) {
+      const myr = allCurrencyData.myr || {}
+      const sgd = allCurrencyData.sgd || {}
+      const usc = allCurrencyData.usc || {}
+      
+      const totalTransaction = (myr.totalTransaction || 0) + (sgd.totalTransaction || 0) + (usc.totalTransaction || 0)
+      const totalTransAutomation = (myr.totalTransAutomation || 0) + (sgd.totalTransAutomation || 0) + (usc.totalTransAutomation || 0)
+      const transOver60sAutomation = (myr.overdueOver60s || 0) + (sgd.overdueOver60s || 0) + (usc.overdueOver60s || 0)
+      
+      // Calculate weighted average for processing time and coverage rate
+      const myrWeight = myr.totalTransAutomation || 0
+      const sgdWeight = sgd.totalTransAutomation || 0
+      const uscWeight = usc.totalTransAutomation || 0
+      const totalWeight = myrWeight + sgdWeight + uscWeight
+      
+      const avgPTimeAutomation = totalWeight > 0
+        ? ((myr.avgProcessingTime || 0) * myrWeight + (sgd.avgProcessingTime || 0) * sgdWeight + (usc.avgProcessingTime || 0) * uscWeight) / totalWeight
+        : 0
+      
+      const coverageRate = totalTransaction > 0
+        ? ((myr.coverageRate || 0) * (myr.totalTransaction || 0) + (sgd.coverageRate || 0) * (sgd.totalTransaction || 0) + (usc.coverageRate || 0) * (usc.totalTransaction || 0)) / totalTransaction
+        : 0
+      
+      return {
+        totalTransaction,
+        totalTransAutomation,
+        avgPTimeAutomation,
+        transOver60sAutomation,
+        coverageRate
+      }
+    }
+    
+    // Use real data if available (for MYR, SGD, and USC)
+    if (realDepositData && (selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC')) {
       return {
         totalTransaction: realDepositData.totalTransaction || 0,
         totalTransAutomation: realDepositData.totalTransAutomation || 0,
         avgPTimeAutomation: realDepositData.avgProcessingTime || 0,
         transOver60sAutomation: realDepositData.overdueOver60s || 0,
         coverageRate: realDepositData.coverageRate || 0
-      }
-    }
-    
-    // Return 0 for SGD and USC (no data in Supabase yet)
-    if (selectedCurrency === 'SGD' || selectedCurrency === 'USC') {
-      return {
-        totalTransaction: 0,
-        totalTransAutomation: 0,
-        avgPTimeAutomation: 0,
-        transOver60sAutomation: 0,
-        coverageRate: 0
       }
     }
     
@@ -326,15 +389,17 @@ export default function DepositMonitorPage() {
   }
 
   // Chart data following date range - with all brands data for SGD
-  // Use real data for MYR if available
+  // Use real data for MYR, SGD, and USC if available
   const chartData = (() => {
-    // Use real data for MYR
-    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.dailyData && Array.isArray(realDepositData.dailyData)) {
+    // Use real data for MYR, SGD, and USC
+    if ((selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC') && realDepositData && realDepositData.dailyData && Array.isArray(realDepositData.dailyData)) {
       return realDepositData.dailyData
         .sort((a, b) => new Date(a.date) - new Date(b.date)) // Sort by date ascending
         .map(day => {
           const dateObj = new Date(day.date)
           const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          
+          const currencyPrefix = selectedCurrency.toLowerCase()
           
           return {
             date: formattedDate,
@@ -345,64 +410,61 @@ export default function DepositMonitorPage() {
             coverageRate: realDepositData.chartData.coverageRate[day.date] || 0,
             transactionVolume: realDepositData.chartData.transactionVolume[day.date] || 0,
             // For consistency with multi-currency view
-            myr_overdueTrans: realDepositData.chartData.overdueTrans[day.date] || 0,
-            myr_avgProcessingTime: realDepositData.chartData.avgProcessingTime[day.date] || 0,
-            myr_coverageRate: realDepositData.chartData.coverageRate[day.date] || 0,
-            myr: realDepositData.chartData.transactionVolume[day.date] || 0
+            [`${currencyPrefix}_overdueTrans`]: realDepositData.chartData.overdueTrans[day.date] || 0,
+            [`${currencyPrefix}_avgProcessingTime`]: realDepositData.chartData.avgProcessingTime[day.date] || 0,
+            [`${currencyPrefix}_coverageRate`]: realDepositData.chartData.coverageRate[day.date] || 0,
+            [currencyPrefix]: realDepositData.chartData.transactionVolume[day.date] || 0
           }
         })
     }
     
-    // Return data with 0 values for SGD and USC (no data in Supabase yet)
-    if (selectedCurrency === 'SGD' || selectedCurrency === 'USC') {
-      // Generate dates for the month but with 0 values
-      if (!selectedMonth?.start || !selectedMonth?.end) {
-        return []
+    // For "ALL" currency - combine data from MYR, SGD, and USC
+    if (selectedCurrency === 'ALL') {
+      // Get all unique dates from all three currencies
+      const allDates = new Set()
+      
+      if (allCurrencyData.myr?.dailyData) {
+        allCurrencyData.myr.dailyData.forEach(day => allDates.add(day.date))
+      }
+      if (allCurrencyData.sgd?.dailyData) {
+        allCurrencyData.sgd.dailyData.forEach(day => allDates.add(day.date))
+      }
+      if (allCurrencyData.usc?.dailyData) {
+        allCurrencyData.usc.dailyData.forEach(day => allDates.add(day.date))
       }
       
-      const days = []
-      const startDate = new Date(selectedMonth.start)
-      const endDate = new Date(selectedMonth.end)
+      // Convert to sorted array
+      const sortedDates = Array.from(allDates).sort((a, b) => new Date(a) - new Date(b))
       
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        const dateKey = d.toISOString().split('T')[0]
+      return sortedDates.map(date => {
+        const dateObj = new Date(date)
+        const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         
-        const baseData = {
-          date: dateStr,
-          originalDate: dateKey,
-          overdueTrans: 0,
-          avgProcessingTime: 0,
-          coverageRate: 0,
-          transactionVolume: 0,
-          myr_overdueTrans: 0,
-          myr_avgProcessingTime: 0,
-          myr_coverageRate: 0,
-          myr: 0,
-          sgd_overdueTrans: 0,
-          sgd_avgProcessingTime: 0,
-          sgd_coverageRate: 0,
-          sgd: 0,
-          usc_overdueTrans: 0,
-          usc_avgProcessingTime: 0,
-          usc_coverageRate: 0,
-          usc: 0
+        // Get data for each currency on this date
+        const myrData = allCurrencyData.myr?.chartData || {}
+        const sgdData = allCurrencyData.sgd?.chartData || {}
+        const uscData = allCurrencyData.usc?.chartData || {}
+        
+        return {
+          date: formattedDate,
+          originalDate: date,
+          // MYR data
+          myr_overdueTrans: myrData.overdueTrans?.[date] || 0,
+          myr_avgProcessingTime: myrData.avgProcessingTime?.[date] || 0,
+          myr_coverageRate: myrData.coverageRate?.[date] || 0,
+          myr: myrData.transactionVolume?.[date] || 0,
+          // SGD data
+          sgd_overdueTrans: sgdData.overdueTrans?.[date] || 0,
+          sgd_avgProcessingTime: sgdData.avgProcessingTime?.[date] || 0,
+          sgd_coverageRate: sgdData.coverageRate?.[date] || 0,
+          sgd: sgdData.transactionVolume?.[date] || 0,
+          // USC data
+          usc_overdueTrans: uscData.overdueTrans?.[date] || 0,
+          usc_avgProcessingTime: uscData.avgProcessingTime?.[date] || 0,
+          usc_coverageRate: uscData.coverageRate?.[date] || 0,
+          usc: uscData.transactionVolume?.[date] || 0,
         }
-        
-        // Add brand data for SGD (all 0)
-        if (selectedCurrency === 'SGD') {
-          brands.slice(1).forEach((brand) => {
-            baseData[`${brand}_overdueTrans`] = 0
-            baseData[`${brand}_avgProcessingTime`] = 0
-            baseData[`${brand}_coverageRate`] = 0
-            baseData[`${brand}_transactionVolume`] = 0
-          })
-        }
-        
-        days.push(baseData)
-      }
-      
-      return days
+      })
     }
     
     // Fallback to mock data for ALL only
@@ -445,8 +507,8 @@ export default function DepositMonitorPage() {
 
   // Brand Comparison Data - Use real data if available, otherwise return empty/zero
   const brandComparisonData = (() => {
-    // Use real data for MYR if available
-    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.brandComparison && Array.isArray(realDepositData.brandComparison)) {
+    // Use real data for MYR, SGD, and USC if available
+    if ((selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC') && realDepositData && realDepositData.brandComparison && Array.isArray(realDepositData.brandComparison)) {
       return realDepositData.brandComparison.map(item => ({
         brand: item.brand,
         avgTime: item.avgTime || 0,
@@ -459,14 +521,14 @@ export default function DepositMonitorPage() {
       }))
     }
     
-    // Return empty array for SGD, USC (no data in Supabase yet)
+    // Return empty array for ALL (aggregate view)
     return []
   })()
 
   // Slow Transaction Data - Use real data if available, otherwise return zero
   const slowTransactionData = (() => {
-    // Use real data for MYR if available
-    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.slowTransactions && realDepositData.slowTransactionSummary) {
+    // Use real data for MYR, SGD, and USC if available
+    if ((selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC') && realDepositData && realDepositData.slowTransactions && realDepositData.slowTransactionSummary) {
       return {
         totalSlowTransaction: realDepositData.slowTransactionSummary.totalSlowTransaction || 0,
         avgProcessingTime: realDepositData.slowTransactionSummary.avgProcessingTime || 0,
@@ -475,7 +537,7 @@ export default function DepositMonitorPage() {
       }
     }
     
-    // Return zero data for SGD, USC (no data in Supabase yet)
+    // Return zero data for ALL (aggregate view)
     return {
       totalSlowTransaction: 0,
       avgProcessingTime: 0,
@@ -486,12 +548,12 @@ export default function DepositMonitorPage() {
 
   // Case Volume Data - Use real data if available, otherwise return empty
   const caseVolumeData = (() => {
-    // Use real data for MYR if available
-    if (selectedCurrency === 'MYR' && realDepositData && realDepositData.caseVolume && Array.isArray(realDepositData.caseVolume)) {
+    // Use real data for MYR, SGD, and USC if available
+    if ((selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC') && realDepositData && realDepositData.caseVolume && Array.isArray(realDepositData.caseVolume)) {
       return realDepositData.caseVolume
     }
     
-    // Return empty array for SGD, USC (no data in Supabase yet)
+    // Return empty array for ALL (aggregate view)
     return []
   })()
 
