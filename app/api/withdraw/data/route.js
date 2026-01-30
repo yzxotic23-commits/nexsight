@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseDataServer } from '@/lib/supabase/data-server'
 
+export const dynamic = 'force-dynamic'
+
 // Helper to convert HH:MM:SS to seconds
 const timeToSeconds = (timeString) => {
   if (!timeString) return 0

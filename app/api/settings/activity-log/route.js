@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET - Fetch all activity logs
 export async function GET(request) {
   try {
