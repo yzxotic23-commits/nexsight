@@ -55,7 +55,6 @@ export async function GET(request) {
     if (brand && brand !== 'ALL') {
       const brandTrim = String(brand).trim()
       query = query.ilike('line', `%${brandTrim}%`)
-      console.log(`Withdraw API: filtering by brand ilike '%${brandTrim}%' on ${tableName}`)
     }
 
     const { data: rows, error } = await query
@@ -113,16 +112,18 @@ export async function GET(request) {
       transactionVolume: dailyVolume
     }
 
-    // Slow transactions (> 5 minutes)
-    const slowTransactions = rows?.filter(r => timeToSeconds(r.process_time) > 300).map(r => ({
-      brand: r.line || 'UNKNOWN',
-      customerName: r.user_name || r.user || 'N/A',
-      amount: r.amount ? parseFloat(r.amount) : 0,
-      processingTime: Math.round(timeToSeconds(r.process_time) * 10) / 10,
-      completed: r.completed || '',
-      date: r.date,
-      operatorGroup: r.operator_group || ''
-    })) || []
+    // Slow transactions (> 5 minutes) - limit to 200 for performance
+    const slowTransactions = (rows?.filter(r => timeToSeconds(r.process_time) > 300) || [])
+      .slice(0, 200) // Limit early for better performance
+      .map(r => ({
+        brand: r.line || 'UNKNOWN',
+        customerName: r.user_name || r.user || 'N/A',
+        amount: r.amount ? parseFloat(r.amount) : 0,
+        processingTime: Math.round(timeToSeconds(r.process_time) * 10) / 10,
+        completed: r.completed || '',
+        date: r.date,
+        operatorGroup: r.operator_group || ''
+      }))
 
     const slowTransactionSummary = {
       totalSlowTransaction: slowTransactions.length,

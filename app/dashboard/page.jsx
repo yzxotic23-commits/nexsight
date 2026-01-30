@@ -14,6 +14,7 @@ import KPICard from '@/components/KPICard'
 import ThemeToggle from '@/components/ThemeToggle'
 import FilterBar from '@/components/FilterBar'
 import { useThemeStore } from '@/lib/stores/themeStore'
+import { cachedFetch } from '@/lib/hooks/useCachedFetch'
 import {
   TrendingUp,
   ArrowDownCircle,
@@ -115,7 +116,7 @@ export default function DashboardPage() {
       const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
       const currentMonth = format(selectedMonth.start, 'yyyy-MM')
       
-      // Fetch ALL data in parallel for maximum speed - including withdraw and bank data
+      // Fetch ALL data in parallel with caching for maximum speed
       const [
         depositResults, 
         withdrawResults,
@@ -124,26 +125,26 @@ export default function DashboardPage() {
         bankAccountResult, 
         wnleResult
       ] = await Promise.allSettled([
-        // Fetch all deposit currencies in parallel
+        // Fetch all deposit currencies in parallel with cache
         Promise.all([
-          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`).then(r => r.json()),
-          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`).then(r => r.json()),
-          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`).then(r => r.json())
+          cachedFetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`),
+          cachedFetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`),
+          cachedFetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`)
         ]),
-        // Fetch all withdraw currencies in parallel
+        // Fetch all withdraw currencies in parallel with cache
         Promise.all([
-          fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`).then(r => r.json()),
-          fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`).then(r => r.json()),
-          fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`).then(r => r.json())
+          cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`),
+          cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`),
+          cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`)
         ]),
-        // Fetch wealth data
-        fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`).then(r => r.json()),
-        // Fetch bank owner data
-        fetch(`/api/bank-owner?month=${currentMonth}&currency=SGD`).then(r => r.json()),
-        // Fetch bank account rental data
-        fetch(`/api/bank-price`).then(r => r.json()),
-        // Fetch WNLE count
-        fetch(`/api/wealths/wnle-count?startDate=${startDate}&endDate=${endDate}`).then(r => r.json())
+        // Fetch wealth data with cache
+        cachedFetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`),
+        // Fetch bank owner data with cache (longer cache for monthly data)
+        cachedFetch(`/api/bank-owner?month=${currentMonth}&currency=SGD`, {}, 10 * 60 * 1000), // 10 minutes
+        // Fetch bank account rental data with cache - filter by start_date within selected month
+        cachedFetch(`/api/bank-price?startDate=${startDate}&endDate=${endDate}`, {}, 2 * 60 * 1000), // 2 minutes (shorter cache since filtered by date)
+        // Fetch WNLE count with cache
+        cachedFetch(`/api/wealths/wnle-count?startDate=${startDate}&endDate=${endDate}`)
       ])
       
       // Process Deposit data

@@ -11,6 +11,8 @@ import FilterBar from '@/components/FilterBar'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
+import { cachedFetch } from '@/lib/hooks/useCachedFetch'
+import { format } from 'date-fns'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { Users, TrendingUp, Search, Bell, HelpCircle, Settings, User, ChevronDown, Power, Filter, Plus, Trash2, Save, X, Eye, ChevronLeft, ChevronRight, CreditCard, DollarSign, Wallet } from 'lucide-react'
 import Link from 'next/link'
@@ -68,70 +70,78 @@ export default function WealthAccountPage() {
   }
   const [selectedBankOwnerMonth, setSelectedBankOwnerMonth] = useState(getCurrentMonth())
 
-  // Fetch bank price data from Supabase
+  // Helper function to refresh bank price data with date filter
+  const refreshBankPriceData = async () => {
+    try {
+      // Format dates for API - filter by start_date
+      const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
+      const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+      
+      const result = await cachedFetch(`/api/bank-price?currency=${selectedMarket}&startDate=${startDate}&endDate=${endDate}`, {}, 2 * 60 * 1000) // 2 minutes cache
+      
+      if (result && result.success) {
+        // Map Supabase data to match component's expected format
+        const mappedData = result.data.map(item => {
+          const rowData = {
+            id: item.id,
+            supplier: item.supplier || 'WEALTH+',
+            bankAccountName: item.bank_account_name || '',
+            status: item.status || 'ACTIVE',
+            department: item.department || '',
+            sellOff: item.sell_off || '',
+            startDate: item.start_date 
+              ? (typeof item.start_date === 'string' 
+                  ? item.start_date.split('T')[0] 
+                  : item.start_date instanceof Date
+                    ? item.start_date.toISOString().split('T')[0]
+                    : item.start_date)
+              : '',
+            currency: item.currency || selectedMarket,
+            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
+            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
+            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
+            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
+            addition: item.addition || '',
+            remark: item.remark || '',
+            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
+            createdAt: item.created_at // Add created_at for sorting
+          }
+          // Recalculate payment total based on formula when loading data
+          rowData.paymentTotal = calculatePaymentTotal(rowData)
+          return rowData
+        })
+        
+        // Sort by created_at DESC so newest rows appear at top
+        mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        
+        setBankRentData(mappedData)
+        return mappedData
+      } else {
+        showToast('Failed to load bank price data', 'error')
+        setBankRentData([])
+        return []
+      }
+    } catch (error) {
+      console.error('Error fetching bank price data:', error)
+      showToast('Error loading bank price data', 'error')
+      setBankRentData([])
+      return []
+    }
+  }
+
+  // Fetch bank price data from Supabase - filter by start_date within selectedMonth
   useEffect(() => {
     async function fetchBankPriceData() {
       setLoading(true)
       try {
-        console.log('Fetching bank price data for currency:', selectedMarket)
-        
-        const response = await fetch(`/api/bank-price?currency=${selectedMarket}`)
-        const result = await response.json()
-        
-        console.log('Bank price API response:', result)
-        
-        if (result.success) {
-          // Map Supabase data to match component's expected format
-          const mappedData = result.data.map(item => {
-            const rowData = {
-              id: item.id,
-              supplier: item.supplier || 'WEALTH+',
-              bankAccountName: item.bank_account_name || '',
-              status: item.status || 'ACTIVE',
-              department: item.department || '',
-              sellOff: item.sell_off || '',
-              startDate: item.start_date 
-                ? (typeof item.start_date === 'string' 
-                    ? item.start_date.split('T')[0] 
-                    : item.start_date instanceof Date
-                      ? item.start_date.toISOString().split('T')[0]
-                      : item.start_date)
-                : '',
-              currency: item.currency || selectedMarket,
-              rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-              commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-              markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-              sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-              addition: item.addition || '',
-              remark: item.remark || '',
-              paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-              createdAt: item.created_at // Add created_at for sorting
-            }
-            // Recalculate payment total based on formula when loading data
-            rowData.paymentTotal = calculatePaymentTotal(rowData)
-            return rowData
-          })
-          
-          // Sort by created_at DESC so newest rows appear at top
-          mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          
-          console.log(`Loaded ${mappedData.length} bank price records`)
-          setBankRentData(mappedData)
-        } else {
-          showToast('Failed to load bank price data', 'error')
-          setBankRentData([])
-        }
-      } catch (error) {
-        console.error('Error fetching bank price data:', error)
-        showToast('Error loading bank price data', 'error')
-        setBankRentData([])
+        await refreshBankPriceData()
       } finally {
         setLoading(false)
       }
     }
     
     fetchBankPriceData()
-  }, [selectedMarket, showToast])
+  }, [selectedMarket, selectedMonth, showToast])
 
   // Fetch bank owner data from Supabase (only for SGD)
   useEffect(() => {
@@ -306,39 +316,8 @@ export default function WealthAccountPage() {
 
       if (result.success) {
         showToast('New row added successfully', 'success')
-        // Refresh data
-        const fetchResponse = await fetch(`/api/bank-price?currency=${selectedMarket}`)
-        const fetchResult = await fetchResponse.json()
-        
-        if (fetchResult.success) {
-          const mappedData = fetchResult.data.map(item => ({
-            id: item.id,
-            supplier: item.supplier || 'WEALTH+',
-            bankAccountName: item.bank_account_name || '',
-            status: item.status || 'ACTIVE',
-            department: item.department || '',
-            sellOff: item.sell_off || '',
-            startDate: item.start_date 
-              ? (typeof item.start_date === 'string' 
-                  ? item.start_date.split('T')[0] 
-                  : item.start_date instanceof Date
-                    ? item.start_date.toISOString().split('T')[0]
-                    : item.start_date)
-              : '',
-            currency: item.currency || selectedMarket,
-            rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-            commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-            markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-            sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-            addition: item.addition || '',
-            remark: item.remark || '',
-            paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-            createdAt: item.created_at // Add created_at for sorting
-          }))
-          // Sort by created_at DESC so newest rows appear at top
-          mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          setBankRentData(mappedData)
-        }
+        // Refresh data with date filter
+        await refreshBankPriceData()
       } else {
         showToast('Failed to add new row', 'error')
       }
@@ -384,44 +363,8 @@ export default function WealthAccountPage() {
 
         if (result.success) {
           showToast('Row deleted successfully', 'success')
-          // Refresh data
-          const fetchResponse = await fetch(`/api/bank-price?currency=${selectedMarket}`)
-          const fetchResult = await fetchResponse.json()
-          
-          if (fetchResult.success) {
-            const mappedData = fetchResult.data.map(item => {
-              const rowData = {
-                id: item.id,
-                supplier: item.supplier || 'WEALTH+',
-                bankAccountName: item.bank_account_name || '',
-                status: item.status || 'ACTIVE',
-                department: item.department || '',
-                sellOff: item.sell_off || '',
-                startDate: item.start_date 
-                  ? (typeof item.start_date === 'string' 
-                      ? item.start_date.split('T')[0] 
-                      : item.start_date instanceof Date
-                        ? item.start_date.toISOString().split('T')[0]
-                        : item.start_date)
-                  : '',
-                currency: item.currency || selectedMarket,
-                rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-                commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-                markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-                sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-                addition: item.addition || '',
-                remark: item.remark || '',
-                paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-                createdAt: item.created_at
-              }
-              // Recalculate payment total based on formula when loading data
-              rowData.paymentTotal = calculatePaymentTotal(rowData)
-              return rowData
-            })
-            // Sort by created_at DESC
-            mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            setBankRentData(mappedData)
-          }
+          // Refresh data with date filter
+          await refreshBankPriceData()
         } else {
           showToast('Failed to delete row', 'error')
         }
@@ -466,44 +409,8 @@ export default function WealthAccountPage() {
 
       if (result.success) {
         showToast('Row saved successfully', 'success')
-        // Refresh data
-        const fetchResponse = await fetch(`/api/bank-price?currency=${selectedMarket}`)
-        const fetchResult = await fetchResponse.json()
-        
-        if (fetchResult.success) {
-          const mappedData = fetchResult.data.map(item => {
-            const rowData = {
-              id: item.id,
-              supplier: item.supplier || 'WEALTH+',
-              bankAccountName: item.bank_account_name || '',
-              status: item.status || 'ACTIVE',
-              department: item.department || '',
-              sellOff: item.sell_off || '',
-              startDate: item.start_date 
-                ? (typeof item.start_date === 'string' 
-                    ? item.start_date.split('T')[0] 
-                    : item.start_date instanceof Date
-                      ? item.start_date.toISOString().split('T')[0]
-                      : item.start_date)
-                : '',
-              currency: item.currency || selectedMarket,
-              rentalCommission: item.rental_commission ? parseFloat(item.rental_commission).toFixed(2) : '0.00',
-              commission: item.commission ? parseFloat(item.commission).toFixed(2) : '0.00',
-              markup: item.markup ? parseFloat(item.markup).toFixed(2) : '',
-              sales: item.sales ? parseFloat(item.sales).toFixed(2) : '',
-              addition: item.addition || '',
-              remark: item.remark || '',
-              paymentTotal: item.payment_total ? parseFloat(item.payment_total).toFixed(2) : '0.00',
-              createdAt: item.created_at
-            }
-            // Recalculate payment total based on formula when loading data
-            rowData.paymentTotal = calculatePaymentTotal(rowData)
-            return rowData
-          })
-          // Sort by created_at DESC
-          mappedData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          setBankRentData(mappedData)
-        }
+        // Refresh data with date filter
+        await refreshBankPriceData()
       } else {
         showToast('Failed to save row', 'error')
       }

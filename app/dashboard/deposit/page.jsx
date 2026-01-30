@@ -16,6 +16,7 @@ import ThemeToggle from '@/components/ThemeToggle'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
 import { useThemeStore } from '@/lib/stores/themeStore'
+import { cachedFetch } from '@/lib/hooks/useCachedFetch'
 
 // Custom Tooltip Components
 const CustomTooltip = ({ active, payload, label }) => {
@@ -108,8 +109,7 @@ export default function DepositMonitorPage() {
       
       setIsLoadingBrands(true)
       try {
-        const response = await fetch('/api/settings/brand-market-mapping')
-        const result = await response.json()
+        const result = await cachedFetch('/api/settings/brand-market-mapping', {}, 10 * 60 * 1000) // 10 minutes cache for brand mapping
         
         if (result.success) {
           // Filter brands by currency and status = 'Active'
@@ -209,18 +209,12 @@ export default function DepositMonitorPage() {
         const startDate = formatLocalDate(selectedMonth.start)
         const endDate = formatLocalDate(selectedMonth.end)
         
-        // If currency is "ALL", fetch data from all three currencies in parallel
+        // If currency is "ALL", fetch data from all three currencies in parallel with cache
         if (selectedCurrency === 'ALL') {
-          const [myrResponse, sgdResponse, uscResponse] = await Promise.all([
-            fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`),
-            fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`),
-            fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`)
-          ])
-          
           const [myrResult, sgdResult, uscResult] = await Promise.all([
-            myrResponse.json(),
-            sgdResponse.json(),
-            uscResponse.json()
+            cachedFetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`),
+            cachedFetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`),
+            cachedFetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`)
           ])
           
           // Store individual currency data
@@ -233,11 +227,10 @@ export default function DepositMonitorPage() {
           // Clear single currency data
           setRealDepositData(null)
         } else {
-          // Fetch single currency
-          const response = await fetch(
+          // Fetch single currency with cache
+          const result = await cachedFetch(
             `/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`
           )
-          const result = await response.json()
         if (result.success) {
           setRealDepositData(result.data)
         } else {

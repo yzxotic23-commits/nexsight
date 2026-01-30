@@ -16,6 +16,7 @@ import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
+import { cachedFetch } from '@/lib/hooks/useCachedFetch'
 
 // Custom Tooltip Component - Updated design
 const CustomTooltip = ({ active, payload, label }) => {
@@ -177,8 +178,7 @@ export default function WithdrawMonitorPage() {
       }
       setIsLoadingBrands(true)
       try {
-        const res = await fetch('/api/settings/brand-market-mapping')
-        const json = await res.json()
+        const json = await cachedFetch('/api/settings/brand-market-mapping', {}, 10 * 60 * 1000) // 10 minutes cache for brand mapping
         if (json.success) {
           const filtered = json.data
             .filter(item => item.market === selectedCurrency && item.status === 'Active')
@@ -195,8 +195,7 @@ export default function WithdrawMonitorPage() {
               try {
                 const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
                 const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
-                const resp = await fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=ALL`)
-                const jd = await resp.json()
+                const jd = await cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=ALL`)
                 const bc = (jd?.data?.brandComparison || []).map(b => b.brand).filter(Boolean)
                 if (bc.length > 0) {
                   setBrands(['ALL', ...bc])
@@ -279,7 +278,7 @@ export default function WithdrawMonitorPage() {
         if (selectedCurrency === 'ALL') {
           const markets = ['MYR', 'SGD', 'USC']
           const promises = markets.map(m =>
-            fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${m}&brand=ALL`).then(r => r.json()).catch(() => null)
+            cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${m}&brand=ALL`).catch(() => null)
           )
           const results = await Promise.all(promises)
           const dataByMarket = {}
@@ -350,8 +349,7 @@ export default function WithdrawMonitorPage() {
           }
           setWithdrawData(mapped)
         } else {
-          const response = await fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`)
-          const result = await response.json()
+          const result = await cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`)
           if (result.success && result.data) {
             const d = result.data
             const mapped = {
@@ -1288,7 +1286,7 @@ export default function WithdrawMonitorPage() {
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Customer Name</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Amount</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Processing Time</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Completed</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1319,7 +1317,9 @@ export default function WithdrawMonitorPage() {
                               {formatProcessingTime(transaction.processingTime)}
                             </span>
                           </td>
-                          <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">{transaction.completed}</td>
+                          <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">
+                            {transaction.date ? new Date(transaction.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}
+                          </td>
                         </tr>
                       )
                     })

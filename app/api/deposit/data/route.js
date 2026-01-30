@@ -287,11 +287,13 @@ export async function GET(request) {
     }).sort((a, b) => a.avgTime - b.avgTime) // Sort by avgTime ascending
 
     // Get slow transactions (> 60 seconds) - only automation transactions
+    // Limit to 200 records for performance (already limited in response)
     const slowTransactions = automationTransactions
       .filter(item => {
         const processTimeSeconds = timeToSeconds(item.process_time)
         return processTimeSeconds > 60
       })
+      .slice(0, 200) // Limit early for better performance
       .map(item => {
         const processTimeSeconds = timeToSeconds(item.process_time)
         const dateObj = new Date(item.date)
@@ -312,7 +314,7 @@ export async function GET(request) {
         
         return {
           brand: item.line || 'UNKNOWN',
-          customerName: item.customer_name || item.customer || 'N/A',
+          customerName: item.user_name || item.customer_name || item.customer || 'N/A',
           amount: item.amount ? parseFloat(item.amount) : 0,
           processingTime: Math.round(processTimeSeconds * 10) / 10,
           completed,
