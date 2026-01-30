@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { format } from 'date-fns'
 import { useFilterStore } from '@/lib/stores/filterStore'
 import { useDashboardStore } from '@/lib/stores/dashboardStore'
-import { getDepositData } from '@/lib/utils/mockData'
+// Removed mock fallback - using real data only. If no data, set zeros.
 import { formatCurrency, formatNumber, formatPercentage } from '@/lib/utils/formatters'
 import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
@@ -78,6 +79,9 @@ export default function DepositMonitorPage() {
   const userDropdownRef = useRef(null)
   const brandDropdownRef = useRef(null)
   const { showToast } = useToast()
+  // Pagination for Slow Transaction table
+  const [slowPageSize, setSlowPageSize] = useState(20)
+  const [slowPage, setSlowPage] = useState(1)
   
   // State for real deposit data from Supabase
   const [realDepositData, setRealDepositData] = useState(null)
@@ -115,7 +119,6 @@ export default function DepositMonitorPage() {
           
           // Add 'ALL' at the beginning
           setBrands(['ALL', ...filteredBrands])
-          console.log(`Loaded ${filteredBrands.length} brands for ${selectedCurrency}:`, filteredBrands)
         } else {
           console.error('Failed to fetch brands:', result.error)
           // Fallback to hardcoded brands for SGD if fetch fails
@@ -167,7 +170,18 @@ export default function DepositMonitorPage() {
   }, [isUserDropdownOpen, isBrandDropdownOpen])
 
   useEffect(() => {
-    setDepositData(getDepositData(selectedMonth, selectedCurrency))
+    // Initialize depositData in store with zeros if API hasn't returned real data yet
+    const zeroDeposit = {
+      month: format(selectedMonth.start, 'MMMM yyyy'),
+      currency: selectedCurrency || 'ALL',
+      currencySymbol: selectedCurrency === 'MYR' ? 'RM' : selectedCurrency === 'SGD' ? 'S$' : selectedCurrency === 'USC' ? 'US$' : '',
+      totalCount: 0,
+      totalAmount: 0,
+      avgAmount: 0,
+      avgProcessingTime: 0,
+      dailyData: []
+    }
+    setDepositData(zeroDeposit)
     // Reset brand to 'ALL' when currency changes or if selected brand is not in available brands
     if (!availableBrands.includes(selectedBrand)) {
       setSelectedBrand('ALL')
@@ -176,9 +190,8 @@ export default function DepositMonitorPage() {
   
   // Fetch real deposit data from Supabase
   useEffect(() => {
-    async function fetchDepositData() {
+      async function fetchDepositData() {
       if (!selectedMonth?.start || !selectedMonth?.end) {
-        console.log('No selectedMonth available')
         return
       }
       
@@ -196,10 +209,8 @@ export default function DepositMonitorPage() {
         const startDate = formatLocalDate(selectedMonth.start)
         const endDate = formatLocalDate(selectedMonth.end)
         
-        // If currency is "ALL", fetch data from all three currencies
+        // If currency is "ALL", fetch data from all three currencies in parallel
         if (selectedCurrency === 'ALL') {
-          console.log('Fetching ALL currencies data:', { startDate, endDate })
-          
           const [myrResponse, sgdResponse, uscResponse] = await Promise.all([
             fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`),
             fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`),
@@ -212,8 +223,6 @@ export default function DepositMonitorPage() {
             uscResponse.json()
           ])
           
-          console.log('ALL currencies response:', { myrResult, sgdResult, uscResult })
-          
           // Store individual currency data
           setAllCurrencyData({
             myr: myrResult.success ? myrResult.data : null,
@@ -225,15 +234,10 @@ export default function DepositMonitorPage() {
           setRealDepositData(null)
         } else {
           // Fetch single currency
-          console.log('Fetching deposit data:', { startDate, endDate, currency: selectedCurrency, brand: selectedBrand })
-          
           const response = await fetch(
             `/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`
           )
           const result = await response.json()
-          
-        // Remove debug logs; set data directly
-        console.log('Deposit API response:', result)
         if (result.success) {
           setRealDepositData(result.data)
         } else {
@@ -401,7 +405,7 @@ export default function DepositMonitorPage() {
           
           const currencyPrefix = selectedCurrency.toLowerCase()
           
-          return {
+          const baseObj = {
             date: formattedDate,
             originalDate: day.date, // Keep original date for sorting
             // Use real data from API
@@ -415,6 +419,13 @@ export default function DepositMonitorPage() {
             [`${currencyPrefix}_coverageRate`]: realDepositData.chartData.coverageRate[day.date] || 0,
             [currencyPrefix]: realDepositData.chartData.transactionVolume[day.date] || 0
           }
+          if (selectedBrand && selectedBrand !== 'ALL') {
+            baseObj[`${selectedBrand}_overdueTrans`] = realDepositData.chartData.overdueTrans[day.date] || 0
+            baseObj[`${selectedBrand}_avgProcessingTime`] = realDepositData.chartData.avgProcessingTime[day.date] || 0
+            baseObj[`${selectedBrand}_coverageRate`] = realDepositData.chartData.coverageRate[day.date] || 0
+            baseObj[`${selectedBrand}_transactionVolume`] = realDepositData.chartData.transactionVolume[day.date] || 0
+          }
+          return baseObj
         })
     }
     
@@ -1273,15 +1284,23 @@ export default function DepositMonitorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {slowTransactionData.details.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-8 px-4 text-center text-gray-500 dark:text-gray-400">
-                        No slow transactions found for the selected period.
-                      </td>
-                    </tr>
-                  ) : (
-                    slowTransactionData.details.map((transaction, index) => (
-                      <tr key={index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                  {(() => {
+                    const details = Array.isArray(slowTransactionData.details) ? slowTransactionData.details : []
+                    if (details.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="py-8 px-4 text-center text-gray-500 dark:text-gray-400">
+                            No slow transactions found for the selected period.
+                          </td>
+                        </tr>
+                      )
+                    }
+                    const total = details.length
+                    const totalPages = Math.max(1, Math.ceil(total / slowPageSize))
+                    const start = (slowPage - 1) * slowPageSize
+                    const paginated = details.slice(start, start + slowPageSize)
+                    return paginated.map((transaction, index) => (
+                      <tr key={start + index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="py-4 px-4">
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white">
                             {transaction.brand}
@@ -1307,9 +1326,51 @@ export default function DepositMonitorPage() {
                         </td>
                       </tr>
                     ))
-                  )}
+                  })()}
                 </tbody>
               </table>
+              {/* Pagination controls - bottom */}
+              <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600 dark:text-gray-300">Rows:</label>
+                  <select
+                    value={slowPageSize}
+                    onChange={(e) => { setSlowPageSize(Number(e.target.value)); setSlowPage(1); }}
+                    className="px-2 py-1 text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  {(() => {
+                    const details = Array.isArray(slowTransactionData.details) ? slowTransactionData.details : []
+                    const total = details.length
+                    const totalPages = Math.max(1, Math.ceil(total / slowPageSize))
+                    return (
+                      <>
+                        <div>Page {slowPage} / {totalPages}</div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setSlowPage(p => Math.max(1, p - 1))}
+                            className="px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            onClick={() => setSlowPage(p => Math.min(totalPages, p + 1))}
+                            className="px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         </div>

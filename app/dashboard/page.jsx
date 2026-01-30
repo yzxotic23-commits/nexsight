@@ -52,6 +52,7 @@ export default function DashboardPage() {
   const [bankAccountRental, setBankAccountRental] = useState(0)
   const [wPlusAccountOutput, setWPlusAccountOutput] = useState(0)
   const [wPlusAccountRentalQuantity, setWPlusAccountRentalQuantity] = useState(0)
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true)
   
   // Color for SGD based on theme
   const sgdColor = theme === 'dark' ? '#C0C0C0' : '#1f2937' // Silver for dark mode, dark gray for light mode
@@ -107,22 +108,38 @@ export default function DashboardPage() {
   useEffect(() => {
     // Load all dashboard data
     async function loadDashboardData() {
+      setIsLoadingDashboard(true)
+      
       // Format dates for API
       const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
       const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+      const currentMonth = format(selectedMonth.start, 'yyyy-MM')
       
-      // Fetch ALL data in parallel for maximum speed
-      const [depositResults, wealthResult, bankOwnerResult, bankAccountResult, wnleResult] = await Promise.allSettled([
+      // Fetch ALL data in parallel for maximum speed - including withdraw and bank data
+      const [
+        depositResults, 
+        withdrawResults,
+        wealthResult, 
+        bankOwnerResult, 
+        bankAccountResult, 
+        wnleResult
+      ] = await Promise.allSettled([
         // Fetch all deposit currencies in parallel
         Promise.all([
-          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR`).then(r => r.json()),
-          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD`).then(r => r.json()),
-          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC`).then(r => r.json())
+          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`).then(r => r.json()),
+          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`).then(r => r.json()),
+          fetch(`/api/deposit/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`).then(r => r.json())
+        ]),
+        // Fetch all withdraw currencies in parallel
+        Promise.all([
+          fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=MYR&brand=ALL`).then(r => r.json()),
+          fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=SGD&brand=ALL`).then(r => r.json()),
+          fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=USC&brand=ALL`).then(r => r.json())
         ]),
         // Fetch wealth data
         fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`).then(r => r.json()),
         // Fetch bank owner data
-        fetch(`/api/bank-owner?month=${format(selectedMonth.start, 'yyyy-MM')}&currency=SGD`).then(r => r.json()),
+        fetch(`/api/bank-owner?month=${currentMonth}&currency=SGD`).then(r => r.json()),
         // Fetch bank account rental data
         fetch(`/api/bank-price`).then(r => r.json()),
         // Fetch WNLE count
@@ -279,55 +296,93 @@ export default function DashboardPage() {
         setDepositData(emptyDeposit)
       }
       
-      // Withdraw data (all 0 for now)
-      const myrWithdraw = {
-        month: format(selectedMonth.start, 'MMMM yyyy'),
-        currency: 'MYR',
-        currencySymbol: 'RM',
-        totalCount: 0,
-        totalAmount: 0,
-        avgAmount: 0,
-        avgProcessingTime: 0,
-        dailyData: []
+      // Process Withdraw data
+      try {
+        if (withdrawResults.status === 'fulfilled') {
+          const [myrResult, sgdResult, uscResult] = withdrawResults.value
+
+          const buildWithdrawObj = (res, currency, symbol) => {
+            if (!res || !res.success || !res.data) {
+              return {
+                month: format(selectedMonth.start, 'MMMM yyyy'),
+                currency,
+                currencySymbol: symbol,
+                totalCount: 0,
+                totalAmount: 0,
+                avgAmount: 0,
+                avgProcessingTime: 0,
+                dailyData: []
+              }
+            }
+            const d = res.data
+            return {
+              month: format(selectedMonth.start, 'MMMM yyyy'),
+              currency,
+              currencySymbol: symbol,
+              totalCount: d.totalTransaction || 0,
+              totalAmount: d.totalAmount || 0,
+              avgAmount: d.avgAmount || 0,
+              avgProcessingTime: d.avgProcessingTime || 0,
+              dailyData: (d.dailyData || []).map(day => ({ date: day.date, count: day.count || 0, amount: day.amount || 0 }))
+            }
+          }
+
+          const myrWithdraw = buildWithdrawObj(myrResult, 'MYR', 'RM')
+          const sgdWithdraw = buildWithdrawObj(sgdResult, 'SGD', 'S$')
+          const uscWithdraw = buildWithdrawObj(uscResult, 'USC', 'US$')
+
+          setMarketWithdrawData({ MYR: myrWithdraw, SGD: sgdWithdraw, USC: uscWithdraw })
+
+          // Aggregate withdraw data from all markets
+          const aggregatedWithdraw = {
+            month: myrWithdraw.month,
+            currency: 'ALL',
+            currencySymbol: '',
+            totalCount: (myrWithdraw.totalCount || 0) + (sgdWithdraw.totalCount || 0) + (uscWithdraw.totalCount || 0),
+            totalAmount: (myrWithdraw.totalAmount || 0) + (sgdWithdraw.totalAmount || 0) + (uscWithdraw.totalAmount || 0),
+            avgAmount: 0,
+            avgProcessingTime: 0,
+            dailyData: []
+          }
+          setWithdrawData(aggregatedWithdraw)
+        } else {
+          // Set empty withdraw data on error
+          const emptyWithdraw = {
+            month: format(selectedMonth.start, 'MMMM yyyy'),
+            currency: 'ALL',
+            currencySymbol: '',
+            totalCount: 0,
+            totalAmount: 0,
+            avgAmount: 0,
+            avgProcessingTime: 0,
+            dailyData: []
+          }
+          setMarketWithdrawData({
+            MYR: { ...emptyWithdraw, currency: 'MYR', currencySymbol: 'RM' },
+            SGD: { ...emptyWithdraw, currency: 'SGD', currencySymbol: 'S$' },
+            USC: { ...emptyWithdraw, currency: 'USC', currencySymbol: 'US$' }
+          })
+          setWithdrawData(emptyWithdraw)
+        }
+      } catch (err) {
+        console.error('Error processing withdraw data:', err)
+        const emptyWithdraw = {
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          currency: 'ALL',
+          currencySymbol: '',
+          totalCount: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          avgProcessingTime: 0,
+          dailyData: []
+        }
+        setMarketWithdrawData({
+          MYR: { ...emptyWithdraw, currency: 'MYR', currencySymbol: 'RM' },
+          SGD: { ...emptyWithdraw, currency: 'SGD', currencySymbol: 'S$' },
+          USC: { ...emptyWithdraw, currency: 'USC', currencySymbol: 'US$' }
+        })
+        setWithdrawData(emptyWithdraw)
       }
-      
-      const sgdWithdraw = {
-        month: format(selectedMonth.start, 'MMMM yyyy'),
-        currency: 'SGD',
-        currencySymbol: 'S$',
-        totalCount: 0,
-        totalAmount: 0,
-        avgAmount: 0,
-        avgProcessingTime: 0,
-        dailyData: []
-      }
-      
-      const uscWithdraw = {
-        month: format(selectedMonth.start, 'MMMM yyyy'),
-        currency: 'USC',
-        currencySymbol: 'US$',
-        totalCount: 0,
-        totalAmount: 0,
-        avgAmount: 0,
-        avgProcessingTime: 0,
-        dailyData: []
-      }
-      
-      setMarketWithdrawData({ MYR: myrWithdraw, SGD: sgdWithdraw, USC: uscWithdraw })
-      
-      // Aggregate withdraw data from all markets
-      const aggregatedWithdraw = {
-        month: myrWithdraw.month,
-        currency: 'ALL',
-        currencySymbol: '',
-        totalCount: 0,
-        totalAmount: 0,
-        avgAmount: 0,
-        avgProcessingTime: 0,
-        dailyData: []
-      }
-      
-      setWithdrawData(aggregatedWithdraw)
       
       // Market Processing Data - not yet implemented, set to empty structure
       setMarketData({
@@ -341,13 +396,10 @@ export default function DashboardPage() {
         ]
       })
       
-      // Wealth Account Data - fetch from API
+      // Process Wealth Account Data
       try {
-        const wealthResponse = await fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`)
-        const wealthResult = await wealthResponse.json()
-        
-        if (wealthResult.success && wealthResult.data) {
-          const wealthData = wealthResult.data
+        if (wealthResult.status === 'fulfilled' && wealthResult.value.success && wealthResult.value.data) {
+          const wealthData = wealthResult.value.data
           
           // Convert dailyAccountCreation object to array
           const dailyDataArray = wealthData.dailyAccountCreation && typeof wealthData.dailyAccountCreation === 'object'
@@ -364,6 +416,9 @@ export default function DashboardPage() {
             growthRate: wealthData.growthRate || 0,
             dailyData: dailyDataArray
           })
+          
+          // Set W+ Account Rental Quantity from wealth data
+          setWPlusAccountRentalQuantity(wealthData.totalSalesQuantity || 0)
         } else {
           // Set to 0 if no data
           setWealthAccountData({
@@ -373,9 +428,10 @@ export default function DashboardPage() {
             growthRate: 0,
             dailyData: []
           })
+          setWPlusAccountRentalQuantity(0)
         }
       } catch (error) {
-        console.error('Error loading wealth account data:', error)
+        console.error('Error processing wealth account data:', error)
         setWealthAccountData({
           month: format(selectedMonth.start, 'MMMM yyyy'),
           totalAccounts: 0,
@@ -383,6 +439,102 @@ export default function DashboardPage() {
           growthRate: 0,
           dailyData: []
         })
+        setWPlusAccountRentalQuantity(0)
+      }
+      
+      // Process Bank Owner Used Amount
+      try {
+        if (bankOwnerResult.status === 'fulfilled' && bankOwnerResult.value.success && bankOwnerResult.value.data && Array.isArray(bankOwnerResult.value.data)) {
+          let total = 0
+          bankOwnerResult.value.data.forEach(item => {
+            if (item.date_values && typeof item.date_values === 'object') {
+              Object.values(item.date_values).forEach(value => {
+                const numValue = parseFloat(value) || 0
+                total += numValue
+              })
+            }
+          })
+          setBankOwnerUsedAmount(total)
+        } else {
+          setBankOwnerUsedAmount(0)
+        }
+      } catch (error) {
+        console.error('Error processing bank owner data:', error)
+        setBankOwnerUsedAmount(0)
+      }
+      
+      // Process Bank Account Rental (Total Payment)
+      try {
+        if (bankAccountResult.status === 'fulfilled' && bankAccountResult.value.success && bankAccountResult.value.data && Array.isArray(bankAccountResult.value.data)) {
+          const calculatePaymentTotal = (row) => {
+            const sellOff = String(row.sell_off || '').toUpperCase().trim()
+            const startDate = row.start_date
+            const rentalCommission = parseFloat(String(row.rental_commission || 0).replace(/,/g, '')) || 0
+            const commission = parseFloat(String(row.commission || 0).replace(/,/g, '')) || 0
+            const addition = parseFloat(String(row.addition || 0).replace(/,/g, '')) || 0
+
+            if (sellOff === 'OFF') {
+              return rentalCommission + commission + addition
+            }
+
+            if (rentalCommission === 200) {
+              return rentalCommission + commission + addition
+            }
+
+            if (!startDate) {
+              return rentalCommission + commission + addition
+            }
+
+            try {
+              const start = new Date(startDate)
+              const year = start.getFullYear()
+              const month = start.getMonth()
+              
+              const lastDayOfMonth = new Date(year, month + 1, 0)
+              const daysInMonth = lastDayOfMonth.getDate()
+              const dayOfStart = start.getDate()
+              const daysRemaining = daysInMonth - dayOfStart + 1
+              
+              const proratedRentalAndAddition = (rentalCommission + addition) * (daysRemaining / daysInMonth)
+              
+              let proratedCommission
+              if (commission === 38) {
+                proratedCommission = commission
+              } else {
+                proratedCommission = commission * (daysRemaining / daysInMonth)
+              }
+              
+              return proratedRentalAndAddition + proratedCommission
+            } catch (error) {
+              console.error('Error calculating payment total:', error)
+              return rentalCommission + commission + addition
+            }
+          }
+          
+          const totalPayment = bankAccountResult.value.data.reduce((sum, row) => {
+            const payment = calculatePaymentTotal(row)
+            return sum + payment
+          }, 0)
+          
+          setBankAccountRental(totalPayment)
+        } else {
+          setBankAccountRental(0)
+        }
+      } catch (error) {
+        console.error('Error processing bank account rental data:', error)
+        setBankAccountRental(0)
+      }
+      
+      // Process W+ Account Output (WNLE Count)
+      try {
+        if (wnleResult.status === 'fulfilled' && wnleResult.value.success) {
+          setWPlusAccountOutput(wnleResult.value.count || 0)
+        } else {
+          setWPlusAccountOutput(0)
+        }
+      } catch (error) {
+        console.error('Error processing WNLE count data:', error)
+        setWPlusAccountOutput(0)
       }
       
       // Bank Account Data - not yet implemented, set to empty structure
@@ -396,6 +548,9 @@ export default function DashboardPage() {
         usageEfficiencyRatio: 0,
         monthlyTrend: []
       })
+      
+      // All data loaded, set loading to false
+      setIsLoadingDashboard(false)
     }
     
     loadDashboardData()
@@ -442,189 +597,20 @@ export default function DashboardPage() {
   const sgdWithdrawAvgTime = marketWithdrawData.SGD?.avgProcessingTime || 0
   const usdWithdrawAvgTime = marketWithdrawData.USC?.avgProcessingTime || 0
 
-  // Fetch Bank Owner Used Amount from API
-  useEffect(() => {
-    async function fetchBankOwnerUsedAmount() {
-      try {
-        // Get current month in YYYY-MM format
-        const currentMonth = format(selectedMonth.start, 'yyyy-MM')
-        
-        const response = await fetch(`/api/bank-owner?month=${currentMonth}`)
-        const result = await response.json()
-        
-        if (result.success && result.data && Array.isArray(result.data)) {
-          // Calculate total from all date_values
-          let total = 0
-          result.data.forEach(item => {
-            if (item.date_values && typeof item.date_values === 'object') {
-              Object.values(item.date_values).forEach(value => {
-                const numValue = parseFloat(value) || 0
-                total += numValue
-              })
-            }
-          })
-          setBankOwnerUsedAmount(total)
-        } else {
-          setBankOwnerUsedAmount(0)
-        }
-      } catch (error) {
-        console.error('Error fetching bank owner used amount:', error)
-        setBankOwnerUsedAmount(0)
-      }
-    }
-    
-    fetchBankOwnerUsedAmount()
-  }, [selectedMonth])
-  
-  // Fetch Bank Account Rental (Total Payment) from API
-  // This should match the calculation in Bank Account Rental menu (Total Payment KPI)
-  // The menu calculates total payment for all currencies combined, without date range filter
-  useEffect(() => {
-    async function fetchBankAccountRental() {
-      try {
-        // Fetch all bank price data (no date range filter, to match Bank Account Rental menu)
-        // The menu shows Total Payment for all currencies without date filtering
-        const response = await fetch(`/api/bank-price`)
-        const result = await response.json()
-        
-        console.log('Bank Account Rental - API response:', {
-          success: result.success,
-          totalCount: result.data?.length || 0,
-          hasData: Array.isArray(result.data) && result.data.length > 0
-        })
-        
-        if (result.success && result.data && Array.isArray(result.data)) {
-          // Calculate total payment using the same formula as Bank Account Rental menu
-          // The menu uses calculatePaymentTotal() function for each row, then sums them
-          // Since payment_total in DB should already be calculated correctly, we can sum directly
-          // But we need to recalculate using the same formula to ensure consistency
-          const calculatePaymentTotal = (row) => {
-            const sellOff = String(row.sell_off || '').toUpperCase().trim()
-            const startDate = row.start_date
-            const rentalCommission = parseFloat(String(row.rental_commission || 0).replace(/,/g, '')) || 0
-            const commission = parseFloat(String(row.commission || 0).replace(/,/g, '')) || 0
-            const addition = parseFloat(String(row.addition || 0).replace(/,/g, '')) || 0
-
-            // If Sell-OFF is "OFF", return H+I+L
-            if (sellOff === 'OFF') {
-              return rentalCommission + commission + addition
-            }
-
-            // If Rental Commission is 200, return H+I+L
-            if (rentalCommission === 200) {
-              return rentalCommission + commission + addition
-            }
-
-            // Calculate days remaining in month from start date
-            if (!startDate) {
-              return rentalCommission + commission + addition
-            }
-
-            try {
-              const start = new Date(startDate)
-              const year = start.getFullYear()
-              const month = start.getMonth()
-              
-              const lastDayOfMonth = new Date(year, month + 1, 0)
-              const daysInMonth = lastDayOfMonth.getDate()
-              const dayOfStart = start.getDate()
-              const daysRemaining = daysInMonth - dayOfStart + 1
-              
-              const proratedRentalAndAddition = (rentalCommission + addition) * (daysRemaining / daysInMonth)
-              
-              let proratedCommission
-              if (commission === 38) {
-                proratedCommission = commission
-              } else {
-                proratedCommission = commission * (daysRemaining / daysInMonth)
-              }
-              
-              return proratedRentalAndAddition + proratedCommission
-            } catch (error) {
-              console.error('Error calculating payment total:', error)
-              return rentalCommission + commission + addition
-            }
-          }
-          
-          // Calculate total payment using the same formula as the menu
-          const totalPayment = result.data.reduce((sum, row) => {
-            const payment = calculatePaymentTotal(row)
-            return sum + payment
-          }, 0)
-          
-          console.log('Bank Account Rental - Total Payment (calculated):', totalPayment)
-          setBankAccountRental(totalPayment)
-        } else {
-          console.warn('Bank Account Rental - Invalid response:', {
-            success: result.success,
-            hasData: !!result.data,
-            isArray: Array.isArray(result.data),
-            error: result.error
-          })
-          setBankAccountRental(0)
-        }
-      } catch (error) {
-        console.error('Bank Account Rental - Error:', error)
-        setBankAccountRental(0)
-      }
-    }
-    
-    fetchBankAccountRental()
-  }, [selectedMonth])
-  
-  // Fetch W+ Account Rental Quantity (Total Sales Quantity from wealths+)
-  useEffect(() => {
-    async function fetchWPlusAccountRentalQuantity() {
-      try {
-        // Format dates for API
-        const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
-        const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
-        
-        const response = await fetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`)
-        const result = await response.json()
-        
-        if (result.success && result.data) {
-          // W+ Account Rental Quantity = Total Sales Quantity from wealths+
-          setWPlusAccountRentalQuantity(result.data.totalSalesQuantity || 0)
-        } else {
-          setWPlusAccountRentalQuantity(0)
-        }
-      } catch (error) {
-        console.error('Error fetching W+ Account Rental Quantity:', error)
-        setWPlusAccountRentalQuantity(0)
-      }
-    }
-    
-    fetchWPlusAccountRentalQuantity()
-  }, [selectedMonth])
-
-  // Fetch W+ Account Output (from jira with label month and project WNLE, using created_at)
-  useEffect(() => {
-    async function fetchWPlusAccountOutput() {
-      try {
-        // Format dates for API (using created_at for date range)
-        const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
-        const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
-        
-        // Fetch from API endpoint that gets WNLE count with month label
-        const response = await fetch(`/api/wealths/wnle-count?startDate=${startDate}&endDate=${endDate}`)
-        const result = await response.json()
-        
-        if (result.success) {
-          setWPlusAccountOutput(result.count || 0)
-        } else {
-          setWPlusAccountOutput(0)
-        }
-      } catch (error) {
-        console.error('Error fetching W+ Account Output:', error)
-        setWPlusAccountOutput(0)
-      }
-    }
-    
-    fetchWPlusAccountOutput()
-  }, [selectedMonth])
   
   // Bank Summary data is now fetched from API (using state variables above)
+
+  // Show loading state while data is being fetched
+  if (isLoadingDashboard) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading dashboard data...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-8">

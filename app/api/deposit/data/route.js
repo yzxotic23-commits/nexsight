@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { supabaseDataServer } from '@/lib/supabase/data-server'
-import { format } from 'date-fns'
 
 export async function GET(request) {
   try {
@@ -9,8 +8,6 @@ export async function GET(request) {
     const endDate = searchParams.get('endDate')
     const currency = searchParams.get('currency') // MYR, SGD, USC
     const brand = searchParams.get('brand') // Brand filter (optional)
-
-    console.log('Fetching deposit data:', { startDate, endDate, currency, brand })
 
     if (!startDate || !endDate) {
       return NextResponse.json(
@@ -29,7 +26,6 @@ export async function GET(request) {
       tableName = 'deposit_usc'
     } else {
       // Return 0 for other currencies not yet implemented
-      console.log(`Currency ${currency} not yet implemented, returning 0 data`)
       return NextResponse.json({
         success: true,
         data: {
@@ -38,27 +34,28 @@ export async function GET(request) {
           avgProcessingTime: 0,
           overdueOver60s: 0,
           coverageRate: 0,
-          dailyData: [], // Return empty array
+          dailyData: [],
           chartData: {
             overdueTrans: {},
             avgProcessingTime: {},
             coverageRate: {},
             transactionVolume: {}
           },
-          brandComparison: [], // Empty array for brand comparison
-          slowTransactions: [], // Empty array for slow transactions
+          brandComparison: [],
+          slowTransactions: [],
           slowTransactionSummary: {
             totalSlowTransaction: 0,
             avgProcessingTime: 0,
             brand: 'N/A'
           },
-          caseVolume: [] // Empty array for case volume
+          caseVolume: []
         },
         message: `${currency} data not yet implemented`
       })
     }
 
-    // Build query for MYR, SGD, or USC
+    // Build query - temporarily using select('*') to avoid column mismatch errors
+    // TODO: Optimize to select only needed columns once schema is confirmed
     let query = supabaseDataServer
       .from(tableName)
       .select('*')
@@ -68,10 +65,7 @@ export async function GET(request) {
     // Filter by brand using 'line' column if provided and not 'ALL'
     if (brand && brand !== 'ALL') {
       const brandTrim = String(brand).trim()
-      // Use case-insensitive substring match to tolerate variants like extra suffix/prefix or casing differences
-      // e.g. dropdown may show "OK188" while DB stores "OK188SG" — substring match will still work.
       query = query.ilike('line', `%${brandTrim}%`)
-      console.log(`Applying brand filter (ilike substring) '${brandTrim}' on ${tableName}`)
     }
 
     const { data: depositData, error } = await query
@@ -83,25 +77,34 @@ export async function GET(request) {
         { status: 500 }
       )
     }
-
-    console.log(`Fetched ${depositData?.length || 0} deposit records from ${tableName} (${currency}) for date range ${startDate} to ${endDate}${brand && brand !== 'ALL' ? ` with brand filter: ${brand}` : ''}`)
     
-    // If no data found, log warning and show sample of available brands
+    // If no data found, return empty structure
     if (!depositData || depositData.length === 0) {
-      console.warn(`⚠️ No data found in table ${tableName} for date range ${startDate} to ${endDate}${brand && brand !== 'ALL' ? ` and brand ${brand}` : ''}`)
-      
-      // Log available brands in this table to help debug
-      if (brand && brand !== 'ALL') {
-        const { data: sampleData } = await supabaseDataServer
-          .from(tableName)
-          .select('line')
-          .gte('date', startDate)
-          .lte('date', endDate)
-          .limit(10)
-        
-        const availableBrands = [...new Set(sampleData?.map(d => d.line) || [])]
-        console.log(`Available brands in ${tableName} for this date range:`, availableBrands)
-      }
+      return NextResponse.json({
+        success: true,
+        data: {
+          totalTransaction: 0,
+          totalTransAutomation: 0,
+          avgProcessingTime: 0,
+          overdueOver60s: 0,
+          coverageRate: 0,
+          dailyData: [],
+          chartData: {
+            overdueTrans: {},
+            avgProcessingTime: {},
+            coverageRate: {},
+            transactionVolume: {}
+          },
+          brandComparison: [],
+          slowTransactions: [],
+          slowTransactionSummary: {
+            totalSlowTransaction: 0,
+            avgProcessingTime: 0,
+            brand: 'N/A'
+          },
+          caseVolume: []
+        }
+      })
     }
 
     // Helper function to convert HH:MM:SS to seconds
@@ -127,16 +130,6 @@ export async function GET(request) {
       return isNaN(num) ? 0 : num
     }
 
-    // Debug: Check sample data
-    if (depositData && depositData.length > 0) {
-      console.log('Sample deposit data (first 3 rows):', depositData.slice(0, 3).map(item => ({
-        date: item.date,
-        line: item.line,
-        operator_group: item.operator_group,
-        process_time: item.process_time,
-        process_time_seconds: timeToSeconds(item.process_time)
-      })))
-    }
 
     // Calculate metrics
     const totalTransaction = depositData?.length || 0
@@ -148,15 +141,6 @@ export async function GET(request) {
       return isAutomation
     }) || []
     const totalTransAutomation = automationTransactions.length
-    
-    console.log(`Automation transactions found: ${totalTransAutomation} out of ${totalTransaction}`)
-    if (automationTransactions.length > 0) {
-      console.log('Sample automation data (first 3):', automationTransactions.slice(0, 3).map(item => ({
-        operator_group: item.operator_group,
-        process_time: item.process_time,
-        process_time_seconds: timeToSeconds(item.process_time)
-      })))
-    }
 
     // Avg Processing Time: average process_time for automation transactions
     let totalProcessingTime = 0
@@ -173,27 +157,12 @@ export async function GET(request) {
     const avgProcessingTime = validProcessingTimeCount > 0
       ? totalProcessingTime / validProcessingTimeCount
       : 0
-      
-    console.log(`Avg Processing Time calculation: total=${totalProcessingTime}s, count=${validProcessingTimeCount}, avg=${avgProcessingTime}s`)
 
     // Overdue > 60s: count automation transactions with process_time > 60
     const overdueOver60s = automationTransactions.filter(item => {
       const processTimeSeconds = timeToSeconds(item.process_time)
       return processTimeSeconds > 60
     }).length
-    
-    console.log(`Overdue > 60s: ${overdueOver60s} transactions`)
-    if (overdueOver60s > 0) {
-      console.log('Sample overdue transactions:', automationTransactions
-        .filter(item => timeToSeconds(item.process_time) > 60)
-        .slice(0, 3)
-        .map(item => ({ 
-          operator_group: item.operator_group, 
-          process_time: item.process_time,
-          process_time_seconds: timeToSeconds(item.process_time)
-        }))
-      )
-    }
 
     // Coverage Rate: total transaction - transactions with 'staff' in operator_group
     const staffTransactions = depositData?.filter(item => {
@@ -259,11 +228,6 @@ export async function GET(request) {
       dailyCoverageRate[date] = day.total > 0 
         ? ((day.total - day.staff) / day.total) * 100 
         : 0
-      
-      // Debug logging for dates with 0 average processing time
-      if (dailyProcessingTime[date] === 0 && day.total > 0) {
-        console.log(`Date ${date}: total=${day.total}, automation=${day.automation}, processingTimeCount=${day.processingTimeCount}, processingTimeSum=${day.processingTimeSum}`)
-      }
     })
 
     // Brand comparison aggregation
@@ -348,7 +312,7 @@ export async function GET(request) {
         
         return {
           brand: item.line || 'UNKNOWN',
-          customerName: item.customer_name || item.customer_name || item.customer || 'N/A',
+          customerName: item.customer_name || item.customer || 'N/A',
           amount: item.amount ? parseFloat(item.amount) : 0,
           processingTime: Math.round(processTimeSeconds * 10) / 10,
           completed,

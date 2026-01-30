@@ -3,13 +3,13 @@
 import { useEffect, useState, useRef } from 'react'
 import { useFilterStore } from '@/lib/stores/filterStore'
 import { useDashboardStore } from '@/lib/stores/dashboardStore'
-import { getWithdrawData } from '@/lib/utils/mockData'
+// Removed mock fallback - using real data only. If no data, set zeros.
 import { formatCurrency, formatNumber, formatPercentage } from '@/lib/utils/formatters'
 import { format } from 'date-fns'
 import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine, LineChart, Line } from 'recharts'
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine, LineChart, Line, LabelList } from 'recharts'
 import { ArrowUpCircle, ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settings, User, ChevronDown, AlertCircle, DollarSign, AlertTriangle, Power, Activity, TrendingUp } from 'lucide-react'
 import { useThemeStore } from '@/lib/stores/themeStore'
 import Link from 'next/link'
@@ -19,12 +19,33 @@ import { useToast } from '@/lib/toast-context'
 
 // Custom Tooltip Component - Updated design
 const CustomTooltip = ({ active, payload, label }) => {
+  const { selectedCurrency, selectedBrand } = useFilterStore()
   if (active && payload && payload.length) {
     const { theme } = useThemeStore.getState()
-    
-    // Handle multiple brands/markets
-    if (payload.length > 1) {
-      const markets = payload.map((p) => {
+
+    // Filter payload to only relevant series based on current selection
+    let filtered = payload
+    if (selectedCurrency && selectedCurrency !== 'ALL') {
+      if (selectedCurrency === 'SGD') {
+        if (selectedBrand && selectedBrand !== 'ALL') {
+          filtered = payload.filter(p => p.name === selectedBrand)
+        } else {
+          // SGD + ALL => show only SGD aggregate series
+          filtered = payload.filter(p => p.name === 'SGD' || p.dataKey?.startsWith('sgd_'))
+        }
+      } else {
+        // MYR or USC selected -> show only that market
+        filtered = payload.filter(p => p.name === selectedCurrency || p.dataKey?.startsWith(selectedCurrency.toLowerCase() + '_'))
+      }
+    }
+
+    // If after filtering nothing remains, fallback to non-zero values
+    if (!filtered || filtered.length === 0) {
+      filtered = payload.filter(p => Number(p.value) && Number(p.value) !== 0)
+    }
+
+    if (filtered.length > 1) {
+      const markets = filtered.map((p) => {
         const marketColors = {
           'MYR': '#DEC05F',
           'SGD': theme === 'dark' ? '#C0C0C0' : '#1f2937',
@@ -45,10 +66,10 @@ const CustomTooltip = ({ active, payload, label }) => {
           color
         }
       })
-      
+
       const total = markets.reduce((sum, m) => sum + (m.value || 0), 0)
-      
-    return (
+
+      return (
         <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700 min-w-[200px]">
           <p className="text-gray-900 dark:text-white text-sm font-bold mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
             {label}
@@ -77,15 +98,18 @@ const CustomTooltip = ({ active, payload, label }) => {
         </div>
       )
     }
-    
+
     // Single value tooltip
-    const value = payload[0].value || 0
+    const p = filtered[0]
+    const value = p?.value || 0
+    const color = p?.color || '#DEC05F'
+    const name = p?.name || (p?.dataKey || '')
     return (
       <div className="bg-white dark:bg-gray-900 rounded-lg p-4 shadow-xl border-2 border-gray-200 dark:border-gray-700">
         <p className="text-gray-900 dark:text-white text-sm font-bold mb-2">{label}</p>
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: payload[0].color || '#DEC05F' }}></div>
-          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{payload[0].name}:</span>
+          <div className="w-3 h-3 rounded-full flex-shrink-0 border border-gray-300 dark:border-gray-600" style={{ backgroundColor: color }}></div>
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{name}:</span>
           <span className="text-xs font-semibold text-gray-900 dark:text-white">
             {typeof value === 'number' ? value.toFixed(value < 1 ? 2 : 0) : value}
           </span>
@@ -128,6 +152,96 @@ export default function WithdrawMonitorPage() {
   const [isBrandDropdownOpen, setIsBrandDropdownOpen] = useState(false)
   const userDropdownRef = useRef(null)
   const brandDropdownRef = useRef(null)
+  const [brands, setBrands] = useState(['ALL'])
+  const [isLoadingBrands, setIsLoadingBrands] = useState(false)
+  const prevCurrencyRef = useRef(selectedCurrency)
+
+  // Reset brand to ALL when user switches market (currency)
+  useEffect(() => {
+    if (prevCurrencyRef.current && prevCurrencyRef.current !== selectedCurrency) {
+      setSelectedBrand('ALL')
+    }
+    prevCurrencyRef.current = selectedCurrency
+  }, [selectedCurrency])
+  
+  // Pagination for Slow Transaction table
+  const [slowPageSize, setSlowPageSize] = useState(20)
+  const [slowPage, setSlowPage] = useState(1)
+
+  // Fetch brands from Supabase brand-market-mapping for the selected currency
+  useEffect(() => {
+    async function fetchBrandsFromSupabase() {
+      if (!selectedCurrency || selectedCurrency === 'ALL') {
+        setBrands(['ALL'])
+        return
+      }
+      setIsLoadingBrands(true)
+      try {
+        const res = await fetch('/api/settings/brand-market-mapping')
+        const json = await res.json()
+        if (json.success) {
+          const filtered = json.data
+            .filter(item => item.market === selectedCurrency && item.status === 'Active')
+            .map(item => item.brand)
+          if (filtered.length > 0) {
+            setBrands(['ALL', ...filtered])
+          } else {
+            // fallback 1: try using withdrawData.brandComparison already loaded in store
+            const bcFromStore = (withdrawData?.brandComparison || []).map(b => b.brand).filter(Boolean)
+            if (bcFromStore.length > 0) {
+              setBrands(['ALL', ...bcFromStore])
+            } else {
+              // fallback 2: try to fetch withdraw data brand list for this currency & date range
+              try {
+                const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
+                const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
+                const resp = await fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=ALL`)
+                const jd = await resp.json()
+                const bc = (jd?.data?.brandComparison || []).map(b => b.brand).filter(Boolean)
+                if (bc.length > 0) {
+                  setBrands(['ALL', ...bc])
+                } else {
+                  // final fallback list
+                  if (selectedCurrency === 'SGD') {
+                    setBrands(['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG'])
+                  } else {
+                    setBrands(['ALL'])
+                  }
+                }
+              } catch (e) {
+                if (selectedCurrency === 'SGD') {
+                  setBrands(['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG'])
+                } else {
+                  setBrands(['ALL'])
+                }
+              }
+            }
+          }
+        } else {
+          // fallback to default list per market
+          if (selectedCurrency === 'SGD') {
+            setBrands(['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG'])
+          } else if (selectedCurrency === 'MYR') {
+            setBrands(['ALL']) // add specific MYR brands if available
+          } else if (selectedCurrency === 'USC') {
+            setBrands(['ALL']) // add USC brands if available
+          } else {
+            setBrands(['ALL'])
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching brands for withdraw:', e)
+        if (selectedCurrency === 'SGD') {
+          setBrands(['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG'])
+        } else {
+          setBrands(['ALL'])
+        }
+      } finally {
+        setIsLoadingBrands(false)
+      }
+    }
+    fetchBrandsFromSupabase()
+  }, [selectedCurrency, selectedMonth, withdrawData])
 
   // Close user dropdown when clicking outside
   useEffect(() => {
@@ -149,10 +263,6 @@ export default function WithdrawMonitorPage() {
 
   useEffect(() => {
     async function fetchWithdrawData() {
-      // Reset brand to ALL when currency changes
-      if (selectedCurrency !== 'SGD') {
-        setSelectedBrand('ALL')
-      }
 
       const formatLocalDate = (date) => {
         const dateObj = date instanceof Date ? date : new Date(date)
@@ -166,33 +276,134 @@ export default function WithdrawMonitorPage() {
       const endDate = formatLocalDate(selectedMonth.end)
 
       try {
-        const response = await fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`)
-        const result = await response.json()
-        if (result.success && result.data) {
-          const d = result.data
-          // Map API response to withdrawData shape used by UI
+        if (selectedCurrency === 'ALL') {
+          const markets = ['MYR', 'SGD', 'USC']
+          const promises = markets.map(m =>
+            fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${m}&brand=ALL`).then(r => r.json()).catch(() => null)
+          )
+          const results = await Promise.all(promises)
+          const dataByMarket = {}
+          markets.forEach((m, i) => {
+            const res = results[i]
+            dataByMarket[m] = (res && res.success && res.data) ? res.data : { totalTransaction: 0, avgProcessingTime: 0, dailyData: [], chartData: {}, slowTransactions: [], brandComparison: [] }
+          })
+
+          const totalCount = Object.values(dataByMarket).reduce((s, d) => s + (d.totalTransaction || 0), 0)
+          const weightedSum = Object.values(dataByMarket).reduce((s, d) => s + ((d.avgProcessingTime || 0) * (d.totalTransaction || 0)), 0)
+          const avgPTime = totalCount > 0 ? (weightedSum / totalCount) : 0
+
+          const dateMap = {}
+          Object.values(dataByMarket).forEach(d => {
+            (d.dailyData || []).forEach(item => {
+              const key = item.date
+              if (!dateMap[key]) dateMap[key] = { date: key, count: 0, amount: 0 }
+              dateMap[key].count += item.count || 0
+              dateMap[key].amount += item.amount || 0
+            })
+          })
+          const combinedDaily = Object.values(dateMap).sort((a,b) => new Date(a.date) - new Date(b.date))
+
+          const combinedChart = { overdueTrans: {}, avgProcessingTime: {}, transactionVolume: {}, myr_overdueTrans: {}, sgd_overdueTrans: {}, usc_overdueTrans: {}, myr_avgProcessingTime: {}, sgd_avgProcessingTime: {}, usc_avgProcessingTime: {}, myr_transactionVolume: {}, sgd_transactionVolume: {}, usc_transactionVolume: {} }
+          Object.entries(dataByMarket).forEach(([m, d]) => {
+            const keyPrefix = m.toLowerCase()
+            const c = d.chartData || {}
+            const overdue = c.overdueTrans || {}
+            const avg = c.avgProcessingTime || {}
+            const vol = c.transactionVolume || {}
+            Object.keys({...overdue, ...avg, ...vol}).forEach(dateKey => {
+              const prefOver = `${keyPrefix}_overdueTrans`
+              const prefAvg = `${keyPrefix}_avgProcessingTime`
+              const prefVol = `${keyPrefix}_transactionVolume`
+              combinedChart[prefOver][dateKey] = overdue[dateKey] || 0
+              combinedChart[prefAvg][dateKey] = avg[dateKey] || 0
+              combinedChart[prefVol][dateKey] = vol[dateKey] || 0
+              combinedChart.overdueTrans[dateKey] = (combinedChart.overdueTrans[dateKey] || 0) + (overdue[dateKey] || 0)
+              const existingAvg = combinedChart.avgProcessingTime[dateKey] || { sum: 0, weight: 0 }
+              const weight = vol[dateKey] || 0
+              existingAvg.sum = (existingAvg.sum || 0) + ((avg[dateKey] || 0) * weight)
+              existingAvg.weight = (existingAvg.weight || 0) + weight
+              combinedChart.avgProcessingTime[dateKey] = existingAvg
+              combinedChart.transactionVolume[dateKey] = (combinedChart.transactionVolume[dateKey] || 0) + (vol[dateKey] || 0)
+            })
+          })
+          Object.keys(combinedChart.avgProcessingTime).forEach(k => {
+            const obj = combinedChart.avgProcessingTime[k]
+            combinedChart.avgProcessingTime[k] = obj.weight > 0 ? (obj.sum / obj.weight) : 0
+          })
+
+          const combinedBrandComp = [].concat(...Object.values(dataByMarket).map(d => d.brandComparison || []))
+          const combinedSlow = [].concat(...Object.values(dataByMarket).map(d => d.slowTransactions || []))
+
           const mapped = {
             month: format(selectedMonth.start, 'MMMM yyyy'),
-            currency: selectedCurrency,
-            currencySymbol: selectedCurrency === 'MYR' ? 'RM' : selectedCurrency === 'SGD' ? 'S$' : 'US$',
-            totalCount: d.totalTransaction || 0,
-            totalAmount: d.dailyData ? d.dailyData.reduce((s, r) => s + (r.amount || 0), 0) : 0,
+            currency: 'ALL',
+            currencySymbol: '',
+            totalCount,
+            totalAmount: combinedDaily.reduce((s,r)=>s+(r.amount||0),0),
             avgAmount: 0,
-            avgProcessingTime: d.avgProcessingTime || 0,
-            dailyData: (d.dailyData || []).map(day => ({ date: day.date, count: day.count || 0, amount: day.amount || 0 })),
-            chartData: d.chartData || {},
-            slowTransactions: d.slowTransactions || [],
-            slowTransactionSummary: d.slowTransactionSummary || { totalSlowTransaction: 0, avgProcessingTime: 0, brand: 'N/A' },
-            brandComparison: d.brandComparison || []
+            avgProcessingTime: avgPTime,
+            dailyData: combinedDaily,
+            chartData: combinedChart,
+            slowTransactions: combinedSlow,
+            slowTransactionSummary: { totalSlowTransaction: combinedSlow.length, avgProcessingTime: combinedSlow.length ? (combinedSlow.reduce((s,d)=>s+(d.processingTime||0),0)/combinedSlow.length) : 0, brand: 'N/A' },
+            brandComparison: combinedBrandComp
           }
           setWithdrawData(mapped)
         } else {
-          // fallback to mock
-          setWithdrawData(getWithdrawData(selectedMonth, selectedCurrency))
+          const response = await fetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`)
+          const result = await response.json()
+          if (result.success && result.data) {
+            const d = result.data
+            const mapped = {
+              month: format(selectedMonth.start, 'MMMM yyyy'),
+              currency: selectedCurrency,
+              currencySymbol: selectedCurrency === 'MYR' ? 'RM' : selectedCurrency === 'SGD' ? 'S$' : 'US$',
+              totalCount: d.totalTransaction || 0,
+              totalAmount: d.dailyData ? d.dailyData.reduce((s, r) => s + (r.amount || 0), 0) : 0,
+              avgAmount: 0,
+              avgProcessingTime: d.avgProcessingTime || 0,
+              dailyData: (d.dailyData || []).map(day => ({ date: day.date, count: day.count || 0, amount: day.amount || 0 })),
+              chartData: d.chartData || {},
+              slowTransactions: d.slowTransactions || [],
+              slowTransactionSummary: d.slowTransactionSummary || { totalSlowTransaction: 0, avgProcessingTime: 0, brand: 'N/A' },
+              brandComparison: d.brandComparison || []
+            }
+            setWithdrawData(mapped)
+          } else {
+            // No data returned - initialize zeros
+            setWithdrawData({
+              month: format(selectedMonth.start, 'MMMM yyyy'),
+              currency: selectedCurrency,
+              currencySymbol: selectedCurrency === 'MYR' ? 'RM' : selectedCurrency === 'SGD' ? 'S$' : 'US$',
+              totalCount: 0,
+              totalAmount: 0,
+              avgAmount: 0,
+              avgProcessingTime: 0,
+              dailyData: [],
+              chartData: { overdueTrans: {}, avgProcessingTime: {}, transactionVolume: {} },
+              slowTransactions: [],
+              slowTransactionSummary: { totalSlowTransaction: 0, avgProcessingTime: 0, brand: 'N/A' },
+              brandComparison: []
+            })
+          }
         }
       } catch (error) {
         console.error('Error fetching withdraw data:', error)
-        setWithdrawData(getWithdrawData(selectedMonth, selectedCurrency))
+        // On error, initialize zeros
+        setWithdrawData({
+          month: format(selectedMonth.start, 'MMMM yyyy'),
+          currency: selectedCurrency,
+          currencySymbol: selectedCurrency === 'MYR' ? 'RM' : selectedCurrency === 'SGD' ? 'S$' : 'US$',
+          totalCount: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          avgProcessingTime: 0,
+          dailyData: [],
+          chartData: { overdueTrans: {}, avgProcessingTime: {}, transactionVolume: {} },
+          slowTransactions: [],
+          slowTransactionSummary: { totalSlowTransaction: 0, avgProcessingTime: 0, brand: 'N/A' },
+          brandComparison: []
+        })
       }
     }
 
@@ -216,17 +427,8 @@ export default function WithdrawMonitorPage() {
   })
 
   const tabs = ['Overview', 'Brand Comparison', 'Slow Transaction', 'Case Volume']
-  const brands = ['ALL', 'WBSG', 'M24SG', 'OK188SG', 'OXSG', 'FWSG', 'ABSG']
-  
-  // Get available brands based on selected currency
-  const getAvailableBrands = () => {
-    if (selectedCurrency === 'SGD') {
-      return brands
-    }
-    return ['ALL']
-  }
-  
-  const availableBrands = getAvailableBrands()
+
+  const availableBrands = brands
   
   // Calculate KPI data based on selected currency and brand
   const calculateOverviewData = () => {
@@ -283,19 +485,45 @@ export default function WithdrawMonitorPage() {
 
     // Fill aggregate values from chartData if present
     const c = withdrawData.chartData || {}
-    baseData.overdueTrans = c.overdueTrans?.[dateKey] || 0
-    baseData.avgProcessingTime = c.avgProcessingTime?.[dateKey] || 0
-    baseData.transactionVolume = c.transactionVolume?.[dateKey] || 0
+    if (selectedCurrency === 'ALL') {
+      baseData.myr_overdueTrans = c.myr_overdueTrans?.[dateKey] || 0
+      baseData.sgd_overdueTrans = c.sgd_overdueTrans?.[dateKey] || 0
+      baseData.usc_overdueTrans = c.usc_overdueTrans?.[dateKey] || 0
+      baseData.overdueTrans = (baseData.myr_overdueTrans || 0) + (baseData.sgd_overdueTrans || 0) + (baseData.usc_overdueTrans || 0)
 
-    // Market / brand fields
-    // If single currency selected, map into that currency prefix
-    const prefix = selectedCurrency ? selectedCurrency.toLowerCase() : 'sgd'
-    baseData[`${prefix}_overdueTrans`] = baseData.overdueTrans
-    baseData[`${prefix}_avgProcessingTime`] = baseData.avgProcessingTime
-    baseData[`${prefix}_transactionVolume`] = baseData.transactionVolume
+      baseData.myr_avgProcessingTime = c.myr_avgProcessingTime?.[dateKey] || 0
+      baseData.sgd_avgProcessingTime = c.sgd_avgProcessingTime?.[dateKey] || 0
+      baseData.usc_avgProcessingTime = c.usc_avgProcessingTime?.[dateKey] || 0
+      // aggregate avgProcessingTime as weighted by transactionVolume per date if available, else simple average
+      const volMy = c.myr_transactionVolume?.[dateKey] || 0
+      const volSg = c.sgd_transactionVolume?.[dateKey] || 0
+      const volUs = c.usc_transactionVolume?.[dateKey] || 0
+      const totalVol = volMy + volSg + volUs
+      if (totalVol > 0) {
+        baseData.avgProcessingTime = ((baseData.myr_avgProcessingTime * volMy) + (baseData.sgd_avgProcessingTime * volSg) + (baseData.usc_avgProcessingTime * volUs)) / totalVol
+      } else {
+        baseData.avgProcessingTime = 0
+      }
 
-    // If SGD and a specific brand selected, map to brand_<metric>
-    if (selectedCurrency === 'SGD' && selectedBrand && selectedBrand !== 'ALL') {
+      baseData.myr_transactionVolume = c.myr_transactionVolume?.[dateKey] || 0
+      baseData.sgd_transactionVolume = c.sgd_transactionVolume?.[dateKey] || 0
+      baseData.usc_transactionVolume = c.usc_transactionVolume?.[dateKey] || 0
+      baseData.transactionVolume = (baseData.myr_transactionVolume || 0) + (baseData.sgd_transactionVolume || 0) + (baseData.usc_transactionVolume || 0)
+    } else {
+      baseData.overdueTrans = c.overdueTrans?.[dateKey] || 0
+      baseData.avgProcessingTime = c.avgProcessingTime?.[dateKey] || 0
+      baseData.transactionVolume = c.transactionVolume?.[dateKey] || 0
+
+      // Market / brand fields
+      // If single currency selected, map into that currency prefix
+      const prefix = selectedCurrency ? selectedCurrency.toLowerCase() : 'sgd'
+      baseData[`${prefix}_overdueTrans`] = baseData.overdueTrans
+      baseData[`${prefix}_avgProcessingTime`] = baseData.avgProcessingTime
+      baseData[`${prefix}_transactionVolume`] = baseData.transactionVolume
+    }
+
+    // If a specific brand is selected for any single-market view, map to brand_<metric>
+    if (selectedBrand && selectedBrand !== 'ALL') {
       baseData[`${selectedBrand}_overdueTrans`] = baseData.overdueTrans
       baseData[`${selectedBrand}_avgProcessingTime`] = baseData.avgProcessingTime
       baseData[`${selectedBrand}_transactionVolume`] = baseData.transactionVolume
@@ -340,7 +568,11 @@ export default function WithdrawMonitorPage() {
 
   // Slow Transaction Data (Processing time > 5 minutes = 300 seconds)
   const slowTransactionData = (() => {
-    const details = Array.isArray(withdrawData?.slowTransactions) ? withdrawData.slowTransactions : []
+    let details = Array.isArray(withdrawData?.slowTransactions) ? withdrawData.slowTransactions : []
+    // filter by brand if selected
+    if (selectedBrand && selectedBrand !== 'ALL') {
+      details = details.filter(d => (d.brand || '').toString() === selectedBrand)
+    }
     const total = details.length
     const avg = total > 0 ? Math.round((details.reduce((s,d) => s + (Number(d.processingTime)||0), 0) / total) * 10) / 10 : 0
     const topBrand = details.length > 0 ? details[0].brand : 'N/A'
@@ -352,8 +584,47 @@ export default function WithdrawMonitorPage() {
     }
   })()
 
-  // Case Volume Data - all 0
-  const caseVolumeData = []
+  // Case Volume Data - show per selected market (MYR/SGD/USC). Empty for ALL.
+  const caseVolumeData = (() => {
+    const raw = withdrawData.brandComparison || []
+    if (!selectedCurrency || selectedCurrency === 'ALL') return []
+    const marketBrands = availableBrands.filter(b => b !== 'ALL')
+    let items = []
+    if (marketBrands.length > 0) {
+      items = marketBrands.map((brand) => {
+        const found = raw.find(r => r.brand === brand) || {}
+        const totalTransaction = Number(found.totalTransaction || found.total_transaction || found.totalTrans || found.transactionCount || found.count || found.transactions || found.total || found.txn_count || found.txnCount || 0)
+        // if a specific brand is selected, return only that brand's entry
+        if (selectedBrand && selectedBrand !== 'ALL') {
+          if (brand !== selectedBrand) return null
+        }
+        return {
+          brand,
+          cases: totalTransaction,
+          totalOverdue: Number(found.totalSlowTransaction || found.totalOverdue || found.count || 0),
+          color: brandColors[brand] || (selectedCurrency === 'SGD' ? sgdColor : selectedCurrency === 'MYR' ? '#DEC05F' : '#3b82f6')
+        }
+      })
+      // filter out nulls if selectedBrand used
+      items = items.filter(Boolean)
+    } else {
+      // fallback: map all raw entries
+      items = raw.map((r) => {
+        const totalTransaction = Number(r.totalTransaction || r.total_transaction || r.totalTrans || r.transactionCount || r.count || r.transactions || r.total || r.txn_count || r.txnCount || 0)
+        // if a specific brand selected, only include it
+        if (selectedBrand && selectedBrand !== 'ALL') {
+          if ((r.brand || '') !== selectedBrand) return null
+        }
+        return {
+          brand: r.brand || 'Unknown',
+          cases: totalTransaction,
+          totalOverdue: Number(r.totalSlowTransaction || r.totalOverdue || r.count || 0),
+          color: brandColors[r.brand] || (selectedCurrency === 'SGD' ? sgdColor : selectedCurrency === 'MYR' ? '#DEC05F' : '#3b82f6')
+        }
+      }).filter(Boolean)
+    }
+    return items
+  })()
 
 
   // Custom Tooltip for Case Volume
@@ -376,8 +647,34 @@ export default function WithdrawMonitorPage() {
     return null
   }
 
-  // Brand Comparison Data - all 0
-  const brandComparisonData = []
+  // Brand Comparison Data - show per selected market (MYR/SGD/USC). Empty for ALL.
+  const brandComparisonData = (() => {
+    const raw = withdrawData.brandComparison || []
+    if (!selectedCurrency || selectedCurrency === 'ALL') return []
+    const marketBrands = availableBrands.filter(b => b !== 'ALL')
+    let filtered = []
+    if (marketBrands.length > 0) {
+      filtered = raw.filter(item => marketBrands.includes(item.brand))
+    } else {
+      // fallback: include all raw entries if mapping not available
+      filtered = raw
+    }
+    // if a specific brand selected, narrow down to it
+    if (selectedBrand && selectedBrand !== 'ALL') {
+      filtered = filtered.filter(item => (item.brand || '').toString() === selectedBrand)
+    }
+    return filtered.map((item) => {
+      const brand = item.brand || 'Unknown'
+      const avgTime = item.avgProcessingTime ?? item.avgTime ?? item.avg_time ?? 0
+      const totalOverdue = item.totalSlowTransaction ?? item.totalOverdue ?? item.count ?? 0
+      return {
+        brand,
+        avgTime: Number(avgTime) || 0,
+        totalOverdue: Number(totalOverdue) || 0,
+        color: brandColors[brand] || (selectedCurrency === 'SGD' ? sgdColor : selectedCurrency === 'MYR' ? '#DEC05F' : '#3b82f6')
+      }
+    })
+  })()
 
   // Custom Tooltip for Brand Comparison
   const BrandComparisonTooltip = ({ active, payload }) => {
@@ -429,8 +726,8 @@ export default function WithdrawMonitorPage() {
           
           {/* Filter Bar - Right (Brand then Market then Month) */}
           <div className="ml-auto flex items-center gap-3">
-            {/* Brand Dropdown Filter - Only show for SGD and Overview tab */}
-            {selectedCurrency === 'SGD' && activeTab === 'Overview' ? (
+            {/* Brand Dropdown Filter - show for any single market (MYR/SGD/USC) on Overview tab */}
+            {activeTab === 'Overview' && selectedCurrency && selectedCurrency !== 'ALL' ? (
               <div className="relative" ref={brandDropdownRef}>
                 <button
                   onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
@@ -548,15 +845,17 @@ export default function WithdrawMonitorPage() {
                     tickLine={false}
                   />
                   <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                  <Legend 
-                    verticalAlign="top" 
-                    align="left" 
-                    wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', marginTop: '-10px', fontSize: '14px' }} 
-                    iconType="circle" 
-                    iconSize={8}
-                    fontSize={14}
-                  />
-                  {(selectedCurrency === 'ALL' || (selectedCurrency === 'SGD' && selectedBrand === 'ALL')) ? (
+                  {selectedCurrency === 'ALL' && (
+                    <Legend 
+                      verticalAlign="top" 
+                      align="left" 
+                      wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', marginTop: '-10px', fontSize: '14px' }} 
+                      iconType="circle" 
+                      iconSize={8}
+                      fontSize={14}
+                    />
+                  )}
+                  {selectedCurrency === 'ALL' ? (
                     <>
                       <Area
                         type="monotone"
@@ -566,6 +865,8 @@ export default function WithdrawMonitorPage() {
                         name="MYR"
                         strokeWidth={2}
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                       <Area
                         type="monotone"
@@ -575,6 +876,8 @@ export default function WithdrawMonitorPage() {
                         name="SGD"
                         strokeWidth={2}
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                       <Area
                         type="monotone"
@@ -584,18 +887,32 @@ export default function WithdrawMonitorPage() {
                         name="USC"
                         strokeWidth={2}
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                     </>
                   ) : selectedCurrency === 'MYR' ? (
-                    <Area
-                      type="monotone"
-                      dataKey="myr_overdueTrans"
-                      stroke="#DEC05F"
-                      fill="url(#colorMYROverdueWithdraw)"
-                      name="MYR"
-                      strokeWidth={2}
-                      dot={false}
-                    />
+                    selectedBrand && selectedBrand !== 'ALL' ? (
+                      <Area
+                        type="monotone"
+                        dataKey={`${selectedBrand}_overdueTrans`}
+                        stroke={brandColors[selectedBrand] || '#DEC05F'}
+                        fill={`url(#color${selectedBrand}Withdraw)`}
+                        name={selectedBrand}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    ) : (
+                      <Area
+                        type="monotone"
+                        dataKey="myr_overdueTrans"
+                        stroke="#DEC05F"
+                        fill="url(#colorMYROverdueWithdraw)"
+                        name="MYR"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    )
                   ) : selectedCurrency === 'SGD' ? (
                     selectedBrand !== 'ALL' ? (
                       <Area
@@ -606,33 +923,44 @@ export default function WithdrawMonitorPage() {
                         name={selectedBrand}
                         strokeWidth={2}
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                     ) : (
-                      <>
-                        {brands.slice(1).map((brand) => (
-                          <Area
-                            key={brand}
-                            type="monotone"
-                            dataKey={`${brand}_overdueTrans`}
-                            stroke={brandColors[brand]}
-                            fill={`url(#color${brand}Withdraw)`}
-                            name={brand}
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        ))}
-                      </>
+                      <Area
+                        type="monotone"
+                        dataKey="sgd_overdueTrans"
+                        stroke={sgdColor}
+                        fill="url(#colorSGDOverdueWithdraw)"
+                        name="SGD"
+                        strokeWidth={2}
+                        dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
+                      />
                     )
                   ) : selectedCurrency === 'USC' ? (
-                    <Area
-                      type="monotone"
-                      dataKey="usc_overdueTrans"
-                      stroke="#3b82f6"
-                      fill="url(#colorUSCOverdueWithdraw)"
-                      name="USC"
-                      strokeWidth={2}
-                      dot={false}
-                    />
+                    selectedBrand && selectedBrand !== 'ALL' ? (
+                      <Area
+                        type="monotone"
+                        dataKey={`${selectedBrand}_overdueTrans`}
+                        stroke={brandColors[selectedBrand] || '#3b82f6'}
+                        fill={`url(#color${selectedBrand}Withdraw)`}
+                        name={selectedBrand}
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    ) : (
+                      <Area
+                        type="monotone"
+                        dataKey="usc_overdueTrans"
+                        stroke="#3b82f6"
+                        fill="url(#colorUSCOverdueWithdraw)"
+                        name="USC"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    )
                   ) : null}
                 </AreaChart>
               </ResponsiveContainer>
@@ -657,15 +985,17 @@ export default function WithdrawMonitorPage() {
                     tickLine={false}
                   />
                   <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                  <Legend 
-                    verticalAlign="top" 
-                    align="left" 
-                    wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', marginTop: '-10px', fontSize: '14px' }} 
-                    iconType="circle" 
-                    iconSize={8}
-                    fontSize={14}
-                  />
-                  {(selectedCurrency === 'ALL' || (selectedCurrency === 'SGD' && selectedBrand === 'ALL')) ? (
+                  {selectedCurrency === 'ALL' && (
+                    <Legend 
+                      verticalAlign="top" 
+                      align="left" 
+                      wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', marginTop: '-10px', fontSize: '14px' }} 
+                      iconType="circle" 
+                      iconSize={8}
+                      fontSize={14}
+                    />
+                  )}
+                  {selectedCurrency === 'ALL' ? (
                     <>
                       <Line
                         type="monotone"
@@ -674,6 +1004,8 @@ export default function WithdrawMonitorPage() {
                         strokeWidth={2}
                         name="MYR"
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                       <Line
                         type="monotone"
@@ -682,6 +1014,8 @@ export default function WithdrawMonitorPage() {
                         strokeWidth={2}
                         name="SGD"
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                       <Line
                         type="monotone"
@@ -690,17 +1024,30 @@ export default function WithdrawMonitorPage() {
                         strokeWidth={2}
                         name="USC"
                         dot={false}
+                        isAnimationActive={true}
+                        animationDuration={600}
                       />
                     </>
                   ) : selectedCurrency === 'MYR' ? (
-                    <Line
-                      type="monotone"
-                      dataKey="myr_avgProcessingTime"
-                      stroke="#DEC05F"
-                      strokeWidth={2}
-                      name="MYR"
-                      dot={false}
-                    />
+                    selectedBrand && selectedBrand !== 'ALL' ? (
+                      <Line
+                        type="monotone"
+                        dataKey={`${selectedBrand}_avgProcessingTime`}
+                        stroke={brandColors[selectedBrand] || '#DEC05F'}
+                        strokeWidth={2}
+                        name={selectedBrand}
+                        dot={false}
+                      />
+                    ) : (
+                      <Line
+                        type="monotone"
+                        dataKey="myr_avgProcessingTime"
+                        stroke="#DEC05F"
+                        strokeWidth={2}
+                        name="MYR"
+                        dot={false}
+                      />
+                    )
                   ) : selectedCurrency === 'SGD' ? (
                     selectedBrand !== 'ALL' ? (
                       <Line
@@ -712,29 +1059,35 @@ export default function WithdrawMonitorPage() {
                         dot={false}
                       />
                     ) : (
-                      <>
-                        {brands.slice(1).map((brand) => (
-                          <Line
-                            key={brand}
-                            type="monotone"
-                            dataKey={`${brand}_avgProcessingTime`}
-                            stroke={brandColors[brand]}
-                            strokeWidth={2}
-                            name={brand}
-                            dot={false}
-                          />
-                        ))}
-                      </>
+                      <Line
+                        type="monotone"
+                        dataKey="sgd_avgProcessingTime"
+                        stroke={sgdColor}
+                        strokeWidth={2}
+                        name="SGD"
+                        dot={false}
+                      />
                     )
                   ) : selectedCurrency === 'USC' ? (
-                    <Line
-                      type="monotone"
-                      dataKey="usc_avgProcessingTime"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      name="USC"
-                      dot={false}
-                    />
+                    selectedBrand && selectedBrand !== 'ALL' ? (
+                      <Line
+                        type="monotone"
+                        dataKey={`${selectedBrand}_avgProcessingTime`}
+                        stroke={brandColors[selectedBrand] || '#3b82f6'}
+                        strokeWidth={2}
+                        name={selectedBrand}
+                        dot={false}
+                      />
+                    ) : (
+                      <Line
+                        type="monotone"
+                        dataKey="usc_avgProcessingTime"
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        name="USC"
+                        dot={false}
+                      />
+                    )
                   ) : null}
                 </LineChart>
               </ResponsiveContainer>
@@ -761,15 +1114,17 @@ export default function WithdrawMonitorPage() {
                   tickLine={false}
                 />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Legend 
-                  verticalAlign="top" 
-                  align="left" 
-                  wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', marginTop: '-10px', fontSize: '14px' }} 
-                  iconType="circle" 
-                  iconSize={8}
-                  fontSize={14}
-                />
-                {(selectedCurrency === 'ALL' || (selectedCurrency === 'SGD' && selectedBrand === 'ALL')) ? (
+                {selectedCurrency === 'ALL' && (
+                  <Legend 
+                    verticalAlign="top" 
+                    align="left" 
+                    wrapperStyle={{ paddingTop: '0px', paddingBottom: '20px', marginTop: '-10px', fontSize: '14px' }} 
+                    iconType="circle" 
+                    iconSize={8}
+                    fontSize={14}
+                  />
+                )}
+                {selectedCurrency === 'ALL' ? (
                   <>
                     <Line
                       type="monotone"
@@ -778,6 +1133,8 @@ export default function WithdrawMonitorPage() {
                       strokeWidth={2}
                       name="MYR"
                       dot={false}
+                      isAnimationActive={true}
+                      animationDuration={600}
                     />
                     <Line
                       type="monotone"
@@ -786,6 +1143,8 @@ export default function WithdrawMonitorPage() {
                       strokeWidth={2}
                       name="SGD"
                       dot={false}
+                      isAnimationActive={true}
+                      animationDuration={600}
                     />
                     <Line
                       type="monotone"
@@ -794,17 +1153,30 @@ export default function WithdrawMonitorPage() {
                       strokeWidth={2}
                       name="USC"
                       dot={false}
+                      isAnimationActive={true}
+                      animationDuration={600}
                     />
                   </>
                 ) : selectedCurrency === 'MYR' ? (
-                  <Line
-                    type="monotone"
-                    dataKey="myr_transactionVolume"
-                    stroke="#DEC05F"
-                    strokeWidth={2}
-                    name="MYR"
-                    dot={false}
-                  />
+                  selectedBrand && selectedBrand !== 'ALL' ? (
+                    <Line
+                      type="monotone"
+                      dataKey={`${selectedBrand}_transactionVolume`}
+                      stroke={brandColors[selectedBrand] || '#DEC05F'}
+                      strokeWidth={2}
+                      name={selectedBrand}
+                      dot={false}
+                    />
+                  ) : (
+                    <Line
+                      type="monotone"
+                      dataKey="myr_transactionVolume"
+                      stroke="#DEC05F"
+                      strokeWidth={2}
+                      name="MYR"
+                      dot={false}
+                    />
+                  )
                 ) : selectedCurrency === 'SGD' ? (
                   selectedBrand !== 'ALL' ? (
                     <Line
@@ -816,29 +1188,35 @@ export default function WithdrawMonitorPage() {
                       dot={false}
                     />
                   ) : (
-                    <>
-                      {brands.slice(1).map((brand) => (
-                        <Line
-                          key={brand}
-                          type="monotone"
-                          dataKey={`${brand}_transactionVolume`}
-                          stroke={brandColors[brand]}
-                          strokeWidth={2}
-                          name={brand}
-                          dot={false}
-                        />
-                      ))}
-                    </>
+                    <Line
+                      type="monotone"
+                      dataKey="sgd_transactionVolume"
+                      stroke={sgdColor}
+                      strokeWidth={2}
+                      name="SGD"
+                      dot={false}
+                    />
                   )
                 ) : selectedCurrency === 'USC' ? (
-                  <Line
-                    type="monotone"
-                    dataKey="usc_transactionVolume"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    name="USC"
-                    dot={false}
-                  />
+                  selectedBrand && selectedBrand !== 'ALL' ? (
+                    <Line
+                      type="monotone"
+                      dataKey={`${selectedBrand}_transactionVolume`}
+                      stroke={brandColors[selectedBrand] || '#3b82f6'}
+                      strokeWidth={2}
+                      name={selectedBrand}
+                      dot={false}
+                    />
+                  ) : (
+                    <Line
+                      type="monotone"
+                      dataKey="usc_transactionVolume"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      name="USC"
+                      dot={false}
+                    />
+                  )
                 ) : null}
               </LineChart>
             </ResponsiveContainer>
@@ -860,6 +1238,7 @@ export default function WithdrawMonitorPage() {
                   {brandComparisonData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
+                  <LabelList dataKey="avgTime" position="right" formatter={(value) => Number(value).toFixed(0)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -913,31 +1292,83 @@ export default function WithdrawMonitorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {slowTransactionData.details.map((transaction, index) => (
-                      <tr key={index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                        <td className="py-4 px-4">
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white">
-                            {transaction.brand}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">{transaction.customerName}</td>
-                      <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                        {formatCurrency(transaction.amount, selectedCurrency || 'SGD', 'S$')}
-                        </td>
-                      <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">
-                        <span className={`font-semibold ${
-                          transaction.processingTime > 300 ? 'text-red-600 dark:text-red-400' :
-                          transaction.processingTime > 240 ? 'text-orange-600 dark:text-orange-400' :
-                          'text-yellow-600 dark:text-yellow-400'
-                        }`}>
-                          {formatProcessingTime(transaction.processingTime)}
-                        </span>
-                      </td>
-                        <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">{transaction.completed}</td>
-                      </tr>
-                  ))}
+                  {(() => {
+                    const slowDetails = Array.isArray(slowTransactionData.details) ? slowTransactionData.details : []
+                    const slowTotal = slowDetails.length
+                    const slowTotalPages = Math.max(1, Math.ceil(slowTotal / slowPageSize))
+                    const start = (slowPage - 1) * slowPageSize
+                    const paginated = slowDetails.slice(start, start + slowPageSize)
+                    return paginated.map((transaction, index) => {
+                      return (
+                        <tr key={start + index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                          <td className="py-4 px-4">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white">
+                              {transaction.brand}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">{transaction.customerName}</td>
+                          <td className="py-4 px-4 text-sm font-semibold text-gray-900 dark:text-white">
+                            {formatCurrency(transaction.amount, selectedCurrency || 'SGD', 'S$')}
+                          </td>
+                          <td className="py-4 px-4 text-sm text-gray-900 dark:text-white">
+                            <span className={`font-semibold ${
+                              transaction.processingTime > 300 ? 'text-red-600 dark:text-red-400' :
+                              transaction.processingTime > 240 ? 'text-orange-600 dark:text-orange-400' :
+                              'text-yellow-600 dark:text-yellow-400'
+                            }`}>
+                              {formatProcessingTime(transaction.processingTime)}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">{transaction.completed}</td>
+                        </tr>
+                      )
+                    })
+                  })()}
                 </tbody>
               </table>
+
+              {/* Pagination controls - moved to bottom */}
+              <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600 dark:text-gray-300">Rows:</label>
+                  <select
+                    value={slowPageSize}
+                    onChange={(e) => { setSlowPageSize(Number(e.target.value)); setSlowPage(1); }}
+                    className="px-2 py-1 text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  {(() => {
+                    const slowDetails = Array.isArray(slowTransactionData.details) ? slowTransactionData.details : []
+                    const slowTotal = slowDetails.length
+                    const slowTotalPages = Math.max(1, Math.ceil(slowTotal / slowPageSize))
+                    return (
+                      <>
+                        <div>Page {slowPage} / {slowTotalPages}</div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setSlowPage(p => Math.max(1, p - 1))}
+                            className="px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                          >
+                            Prev
+                          </button>
+                          <button
+                            onClick={() => setSlowPage(p => Math.min(slowTotalPages, p + 1))}
+                            className="px-2 py-1 rounded-md bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -952,7 +1383,12 @@ export default function WithdrawMonitorPage() {
                 <XAxis type="number" stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="totalCase" radius={[0, 4, 4, 0]} fill="#ef4444" />
+                <Bar dataKey="cases" radius={[0, 4, 4, 0]}>
+                  {caseVolumeData.map((entry, idx) => (
+                    <Cell key={`casecell-${idx}`} fill={entry.color} />
+                  ))}
+                  <LabelList dataKey="cases" position="right" formatter={(v) => Number(v).toFixed(0)} />
+                </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartContainer>
@@ -964,7 +1400,12 @@ export default function WithdrawMonitorPage() {
                 <XAxis type="number" stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="totalOverdue" radius={[0, 4, 4, 0]} fill="#f59e0b" />
+                <Bar dataKey="totalOverdue" radius={[0, 4, 4, 0]}>
+                  {caseVolumeData.map((entry, idx) => (
+                    <Cell key={`overduecell-${idx}`} fill={entry.color} />
+                  ))}
+                  <LabelList dataKey="totalOverdue" position="right" formatter={(v) => Number(v).toFixed(0)} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </ChartContainer>
