@@ -106,6 +106,22 @@ export async function POST(request) {
       lastLogin: data.last_login ? formatLastLogin(data.last_login) : 'Never'
     }
 
+    // Log activity (non-blocking)
+    try {
+      await supabaseServer
+        .from('sight_activity_log')
+        .insert({
+          user_name: created_by || 'system',
+          user_id: null, // We don't have the creator's ID here
+          action: 'Created User',
+          target: 'User Management',
+          details: { created_user: fullName, email, role }
+        })
+    } catch (logError) {
+      // Silently fail - activity log might not exist yet
+      console.error('Failed to log activity (non-critical):', logError.message)
+    }
+
     return NextResponse.json({ 
       data: formattedData, 
       success: true, 

@@ -67,6 +67,21 @@ export async function POST(request) {
       )
     }
 
+    // Log activity (non-blocking)
+    try {
+      await supabaseServer
+        .from('sight_activity_log')
+        .insert({
+          user_name: created_by || 'system',
+          user_id: null,
+          action: 'Created Brand Market Mapping',
+          target: 'Settings',
+          details: { brand, market, status }
+        })
+    } catch (logError) {
+      console.error('Failed to log activity (non-critical):', logError.message)
+    }
+
     return NextResponse.json({ data, success: true, message: 'Brand market mapping created successfully' })
   } catch (error) {
     console.error('Unexpected error:', error)

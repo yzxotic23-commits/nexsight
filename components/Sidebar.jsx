@@ -17,25 +17,34 @@ import {
   Receipt,
 } from 'lucide-react'
 import { useUIStore } from '@/lib/stores/uiStore'
+import { useAuth } from '@/lib/hooks/useAuth'
 
-const menuItems = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+const allMenuItems = [
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['Admin', 'Manager', 'User'] },
   { 
     name: 'Transaction', 
     icon: Receipt,
+    roles: ['Admin', 'Manager'],
     submenu: [
       { name: 'Deposit Monitor', href: '/dashboard/deposit', icon: ArrowDownCircle },
       { name: 'Withdraw Monitor', href: '/dashboard/withdraw', icon: ArrowUpCircle },
     ]
   },
-  { name: 'Bank Account Rental', href: '/dashboard/bank-account-rental', icon: Users },
-  { name: 'Wealths+', href: '/dashboard/wealths', icon: CreditCard },
+  { name: 'Bank Account Rental', href: '/dashboard/bank-account-rental', icon: Users, roles: ['Admin', 'Manager'] },
+  { name: 'Wealths+', href: '/dashboard/wealths', icon: CreditCard, roles: ['Admin', 'Manager'] },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
   const { sidebarOpen, toggleSidebar, sidebarCollapsed, toggleSidebarCollapse } = useUIStore()
+  const { user } = useAuth()
   const [expandedMenus, setExpandedMenus] = useState([])
+  
+  // Filter menu items based on user role
+  const menuItems = allMenuItems.filter(item => {
+    if (!user || !user.role) return false
+    return item.roles?.includes(user.role) || false
+  })
 
   // Check if Transaction submenu should be expanded (if any submenu item is active)
   const isTransactionActive = pathname?.includes('/dashboard/deposit') || pathname?.includes('/dashboard/withdraw')

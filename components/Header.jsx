@@ -7,6 +7,7 @@ import { Search, Bell, Settings, User, Calendar, ChevronDown, ChevronUp } from '
 import ThemeToggle from './ThemeToggle'
 import { useFilterStore } from '@/lib/stores/filterStore'
 import { startOfMonth, endOfMonth, format, subMonths } from 'date-fns'
+import Link from 'next/link'
 
 export default function Header() {
   const { user: session } = useAuth()
@@ -76,9 +77,14 @@ export default function Header() {
 
         <ThemeToggle />
 
-        <button className="bg-white dark:bg-dark-card p-2 text-gray-700 dark:text-gray-200 hover:bg-gold-100 dark:hover:bg-gold-500/20 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 transition-colors duration-150">
-          <Settings className="h-4 w-4" />
-        </button>
+        {/* Settings button - only show for Admin and Manager */}
+        {(session?.role === 'Admin' || session?.role === 'Manager') && (
+          <Link href="/dashboard/settings">
+            <button className="bg-white dark:bg-dark-card p-2 text-gray-700 dark:text-gray-200 hover:bg-gold-100 dark:hover:bg-gold-500/20 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 transition-colors duration-150">
+              <Settings className="h-4 w-4" />
+            </button>
+          </Link>
+        )}
 
         <div className="relative" ref={monthDropdownRef}>
           <button

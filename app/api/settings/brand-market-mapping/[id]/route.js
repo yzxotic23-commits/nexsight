@@ -87,6 +87,21 @@ export async function PUT(request, { params }) {
       )
     }
 
+    // Log activity (non-blocking)
+    try {
+      await supabaseServer
+        .from('sight_activity_log')
+        .insert({
+          user_name: updated_by || 'system',
+          user_id: null,
+          action: 'Updated Brand Market Mapping',
+          target: 'Settings',
+          details: { id, brand: data.brand, market: data.market, status: data.status }
+        })
+    } catch (logError) {
+      console.error('Failed to log activity (non-critical):', logError.message)
+    }
+
     return NextResponse.json({ data, success: true, message: 'Brand market mapping updated successfully' })
   } catch (error) {
     console.error('Unexpected error:', error)
@@ -102,6 +117,13 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = params
 
+    // Get mapping details before deletion for logging
+    const { data: mappingToDelete } = await supabaseServer
+      .from('sight_general_brand_market_mapping')
+      .select('brand, market')
+      .eq('id', id)
+      .single()
+
     const { error } = await supabaseServer
       .from('sight_general_brand_market_mapping')
       .delete()
@@ -113,6 +135,23 @@ export async function DELETE(request, { params }) {
         { error: 'Failed to delete brand market mapping', details: error.message },
         { status: 500 }
       )
+    }
+
+    // Log activity (non-blocking)
+    if (mappingToDelete) {
+      try {
+        await supabaseServer
+          .from('sight_activity_log')
+          .insert({
+            user_name: 'system',
+            user_id: null,
+            action: 'Deleted Brand Market Mapping',
+            target: 'Settings',
+            details: { brand: mappingToDelete.brand, market: mappingToDelete.market }
+          })
+      } catch (logError) {
+        console.error('Failed to log activity (non-critical):', logError.message)
+      }
     }
 
     return NextResponse.json({ success: true, message: 'Brand market mapping deleted successfully' })

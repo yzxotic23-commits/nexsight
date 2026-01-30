@@ -16,13 +16,27 @@ import {
   fetchUsers,
   createUser,
   updateUser,
-  deleteUser
+  deleteUser,
+  fetchActivityLogs
 } from '@/lib/utils/supabase-helpers'
+import { formatDistanceToNow } from 'date-fns'
 
 export default function SettingsPage() {
-  const { user: session } = useAuth()
+  const { user: session, loading } = useAuth()
   const { showToast } = useToast()
   const [activeMenu, setActiveMenu] = useState('General')
+  
+  // Redirect User role to dashboard (User can only access dashboard)
+  useEffect(() => {
+    if (!loading && session?.role === 'User') {
+      window.location.href = '/dashboard'
+    }
+  }, [session, loading])
+  
+  // Don't render anything if User role
+  if (!loading && session?.role === 'User') {
+    return null
+  }
   const [showPassword, setShowPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -50,6 +64,10 @@ export default function SettingsPage() {
   // User Management - Now using Supabase
   const [usersList, setUsersList] = useState([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
+  
+  // Activity Log - Now using Supabase
+  const [activities, setActivities] = useState([])
+  const [isLoadingActivities, setIsLoadingActivities] = useState(false)
 
   // Initialize profile data from session
   useEffect(() => {
@@ -78,12 +96,25 @@ export default function SettingsPage() {
     }
   }, [isUserDropdownOpen])
 
-  const menuItems = [
-    { id: 'General', label: 'General', icon: Globe },
-    { id: 'Profile Setting', label: 'Profile Setting', icon: UserCircle },
-    { id: 'User Management', label: 'User Management', icon: Users },
-    { id: 'Activity Log', label: 'Activity Log', icon: FileText },
+  // Filter menu items based on user role
+  const allMenuItems = [
+    { id: 'General', label: 'General', icon: Globe, roles: ['Admin'] },
+    { id: 'Profile Setting', label: 'Profile Setting', icon: UserCircle, roles: ['Admin', 'Manager'] },
+    { id: 'User Management', label: 'User Management', icon: Users, roles: ['Admin'] },
+    { id: 'Activity Log', label: 'Activity Log', icon: FileText, roles: ['Admin'] },
   ]
+  
+  const menuItems = allMenuItems.filter(item => {
+    if (!session || !session.role) return false
+    return item.roles?.includes(session.role) || false
+  })
+  
+  // Set default active menu to first available menu for Manager
+  useEffect(() => {
+    if (session?.role === 'Manager' && menuItems.length > 0 && !menuItems.find(item => item.id === activeMenu)) {
+      setActiveMenu(menuItems[0].id)
+    }
+  }, [session?.role, menuItems.length])
 
   // Brand & Market mapping data - Now using Supabase
   const [brandMarketMapping, setBrandMarketMapping] = useState([])
@@ -134,20 +165,40 @@ export default function SettingsPage() {
     }
   }, [activeMenu, showToast])
 
+  // Fetch activity logs from Supabase
+  useEffect(() => {
+    const loadActivities = async () => {
+      setIsLoadingActivities(true)
+      try {
+        const data = await fetchActivityLogs(200, 0)
+        // Format activities for display
+        const formattedActivities = data.map(activity => ({
+          id: activity.id,
+          user: activity.user_name,
+          action: activity.action,
+          target: activity.target || 'System',
+          timestamp: activity.created_at 
+            ? formatDistanceToNow(new Date(activity.created_at), { addSuffix: true })
+            : 'Unknown',
+          ip: activity.ip_address || 'N/A'
+        }))
+        setActivities(formattedActivities)
+      } catch (error) {
+        console.error('Error loading activity logs:', error)
+        showToast('Failed to load activity logs', 'error')
+        setActivities([])
+      } finally {
+        setIsLoadingActivities(false)
+      }
+    }
+
+    if (activeMenu === 'Activity Log') {
+      loadActivities()
+    }
+  }, [activeMenu, showToast])
+
   // Use state for users list
   const users = usersList
-
-  // Mock activity log data
-  const activities = [
-    { id: 1, user: 'John Doe', action: 'Login', target: 'System', timestamp: '2 hours ago', ip: '192.168.1.100' },
-    { id: 2, user: 'Jane Smith', action: 'Updated Profile', target: 'User Management', timestamp: '3 hours ago', ip: '192.168.1.101' },
-    { id: 3, user: 'Admin User', action: 'Created User', target: 'User Management', timestamp: '5 hours ago', ip: '192.168.1.1' },
-    { id: 4, user: 'Bob Johnson', action: 'Deleted Transaction', target: 'Transactions', timestamp: '1 day ago', ip: '192.168.1.102' },
-    { id: 5, user: 'Alice Williams', action: 'Export Report', target: 'Dashboard', timestamp: '2 days ago', ip: '192.168.1.103' },
-    { id: 6, user: 'Charlie Brown', action: 'Updated Settings', target: 'Settings', timestamp: '3 days ago', ip: '192.168.1.104' },
-    { id: 7, user: 'Diana Prince', action: 'Login', target: 'System', timestamp: '4 days ago', ip: '192.168.1.105' },
-    { id: 8, user: 'John Doe', action: 'Changed Password', target: 'Profile', timestamp: '1 week ago', ip: '192.168.1.100' },
-  ]
 
   const filteredUsers = users.filter(user => 
     user.name.toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -816,42 +867,60 @@ export default function SettingsPage() {
 
                   {/* Activity Log Table */}
                   <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200 dark:border-gray-800">
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">User</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Action</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Target</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Timestamp</th>
-                          <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">IP Address</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredActivities.map((activity) => (
-                          <tr
-                            key={activity.id}
-                            className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-                          >
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-gold-500 flex items-center justify-center">
-                                  <User className="w-4 h-4 text-gray-900" />
-                                </div>
-                                <span className="text-sm font-medium text-gray-900 dark:text-white">{activity.user}</span>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
-                                {activity.action}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{activity.target}</td>
-                            <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{activity.timestamp}</td>
-                            <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 font-mono">{activity.ip}</td>
+                    {isLoadingActivities ? (
+                      <div className="text-center py-12">
+                        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
+                        <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading activity logs...</p>
+                      </div>
+                    ) : (
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-200 dark:border-gray-800">
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">User</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Action</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Target</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Timestamp</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">IP Address</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {filteredActivities.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="text-center py-12 text-gray-500 dark:text-gray-400">
+                                {activities.length === 0 
+                                  ? 'No activity logs found.'
+                                  : 'No activities match your search criteria.'
+                                }
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredActivities.map((activity) => (
+                              <tr
+                                key={activity.id}
+                                className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                              >
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-gold-500 flex items-center justify-center">
+                                      <User className="w-4 h-4 text-gray-900" />
+                                    </div>
+                                    <span className="text-sm font-medium text-gray-900 dark:text-white">{activity.user}</span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
+                                    {activity.action}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{activity.target}</td>
+                                <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{activity.timestamp}</td>
+                                <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400 font-mono">{activity.ip}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
                 </div>
               </div>

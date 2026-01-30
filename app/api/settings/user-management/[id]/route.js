@@ -136,6 +136,22 @@ export async function PUT(request, { params }) {
       lastLogin: data.last_login ? formatLastLogin(data.last_login) : 'Never'
     }
 
+    // Log activity (non-blocking)
+    try {
+      await supabaseServer
+        .from('sight_activity_log')
+        .insert({
+          user_name: updated_by || 'system',
+          user_id: null,
+          action: 'Updated User',
+          target: 'User Management',
+          details: { updated_user: data.name, email: data.email, role: data.role }
+        })
+    } catch (logError) {
+      // Silently fail - activity log might not exist yet
+      console.error('Failed to log activity (non-critical):', logError.message)
+    }
+
     return NextResponse.json({ 
       data: formattedData, 
       success: true, 
@@ -169,6 +185,13 @@ export async function DELETE(request, { params }) {
       )
     }
 
+    // Get user details before deletion for logging
+    const { data: userToDelete } = await supabaseServer
+      .from('sight_user_management')
+      .select('name, email, username')
+      .eq('id', id)
+      .single()
+
     const { error } = await supabaseServer
       .from('sight_user_management')
       .delete()
@@ -180,6 +203,24 @@ export async function DELETE(request, { params }) {
         { error: 'Failed to delete user', details: error.message },
         { status: 500 }
       )
+    }
+
+    // Log activity (non-blocking)
+    if (userToDelete) {
+      try {
+        await supabaseServer
+          .from('sight_activity_log')
+          .insert({
+            user_name: 'system', // We don't have the deleter's name here
+            user_id: null,
+            action: 'Deleted User',
+            target: 'User Management',
+            details: { deleted_user: userToDelete.name, email: userToDelete.email }
+          })
+      } catch (logError) {
+        // Silently fail - activity log might not exist yet
+        console.error('Failed to log activity (non-critical):', logError.message)
+      }
     }
 
     return NextResponse.json({ 
