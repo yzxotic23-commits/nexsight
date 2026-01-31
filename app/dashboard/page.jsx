@@ -141,8 +141,8 @@ export default function DashboardPage() {
         cachedFetch(`/api/wealths/data?startDate=${startDate}&endDate=${endDate}`),
         // Fetch bank owner data with cache (longer cache for monthly data)
         cachedFetch(`/api/bank-owner?month=${currentMonth}&currency=SGD`, {}, 10 * 60 * 1000), // 10 minutes
-        // Fetch bank account rental data with cache - filter by start_date within selected month
-        cachedFetch(`/api/bank-price?startDate=${startDate}&endDate=${endDate}`, {}, 2 * 60 * 1000), // 2 minutes (shorter cache since filtered by date)
+        // Fetch bank account rental data with cache - filter by start_date within selected month and currency
+        cachedFetch(`/api/bank-price?currency=${selectedBankMarket}&startDate=${startDate}&endDate=${endDate}`, {}, 2 * 60 * 1000), // 2 minutes (shorter cache since filtered by date)
         // Fetch WNLE count with cache
         cachedFetch(`/api/wealths/wnle-count?startDate=${startDate}&endDate=${endDate}`)
       ])
@@ -444,14 +444,37 @@ export default function DashboardPage() {
       }
       
       // Process Bank Owner Used Amount
+      // Data diambil dari bank account rental module dengan filter tanggal
       try {
         if (bankOwnerResult.status === 'fulfilled' && bankOwnerResult.value.success && bankOwnerResult.value.data && Array.isArray(bankOwnerResult.value.data)) {
           let total = 0
+          
+          // Get the date range for filtering
+          const start = new Date(selectedMonth.start)
+          const end = new Date(selectedMonth.end)
+          
+          // Month names for date formatting (matching bank account rental module format)
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+          
+          // Create array of date keys in format "DD-MMM" (e.g., "01-Jan", "15-Jan")
+          const dateKeysInRange = []
+          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const day = String(d.getDate()).padStart(2, '0')
+            const monthName = monthNames[d.getMonth()]
+            const dateKey = `${day}-${monthName}`
+            dateKeysInRange.push(dateKey)
+          }
+          
           bankOwnerResult.value.data.forEach(item => {
             if (item.date_values && typeof item.date_values === 'object') {
-              Object.values(item.date_values).forEach(value => {
-                const numValue = parseFloat(value) || 0
-                total += numValue
+              // Only sum values for dates within the selected range
+              // date_values format: {"01-Jan": "912.52", "05-Jan": "738.52"}
+              Object.entries(item.date_values).forEach(([dateKey, value]) => {
+                if (dateKeysInRange.includes(dateKey)) {
+                  // Parse value, handling commas and empty strings
+                  const numValue = parseFloat(String(value).replace(/,/g, '')) || 0
+                  total += numValue
+                }
               })
             }
           })
@@ -465,8 +488,17 @@ export default function DashboardPage() {
       }
       
       // Process Bank Account Rental (Total Payment)
+      // Data diambil dari bank account rental module dengan filter tanggal
+      // Menggunakan logika yang sama dengan menu bank account rental: days remaining in month dari start date
       try {
         if (bankAccountResult.status === 'fulfilled' && bankAccountResult.value.success && bankAccountResult.value.data && Array.isArray(bankAccountResult.value.data)) {
+          // Get the selected date range for filtering
+          const selectedStart = new Date(selectedMonth.start)
+          const selectedEnd = new Date(selectedMonth.end)
+          const selectedStartStr = format(selectedStart, 'yyyy-MM-dd')
+          const selectedEndStr = format(selectedEnd, 'yyyy-MM-dd')
+          
+          // Function to calculate payment total - sama persis dengan menu bank account rental
           const calculatePaymentTotal = (row) => {
             const sellOff = String(row.sell_off || '').toUpperCase().trim()
             const startDate = row.start_date
@@ -474,15 +506,19 @@ export default function DashboardPage() {
             const commission = parseFloat(String(row.commission || 0).replace(/,/g, '')) || 0
             const addition = parseFloat(String(row.addition || 0).replace(/,/g, '')) || 0
 
+            // If Sell-OFF is "OFF", return H+I+L
             if (sellOff === 'OFF') {
               return rentalCommission + commission + addition
             }
 
+            // If Rental Commission is 200, return H+I+L
             if (rentalCommission === 200) {
               return rentalCommission + commission + addition
             }
 
+            // Calculate days remaining in month from start date
             if (!startDate) {
+              // If no start date, return simple sum
               return rentalCommission + commission + addition
             }
 
@@ -491,13 +527,23 @@ export default function DashboardPage() {
               const year = start.getFullYear()
               const month = start.getMonth()
               
+              // Get last day of month (EOMONTH equivalent)
               const lastDayOfMonth = new Date(year, month + 1, 0)
               const daysInMonth = lastDayOfMonth.getDate()
+              
+              // Get day of start date
               const dayOfStart = start.getDate()
+              
+              // Calculate days remaining in month (including start date)
+              // DAY(EOMONTH(F3,0))-DAY(F3)+1
               const daysRemaining = daysInMonth - dayOfStart + 1
               
+              // Calculate prorated rental commission + addition
+              // (H+L) * days_remaining / days_in_month
               const proratedRentalAndAddition = (rentalCommission + addition) * (daysRemaining / daysInMonth)
               
+              // Calculate commission
+              // IF(I=38, I, I * days_remaining / days_in_month)
               let proratedCommission
               if (commission === 38) {
                 proratedCommission = commission
@@ -505,13 +551,18 @@ export default function DashboardPage() {
                 proratedCommission = commission * (daysRemaining / daysInMonth)
               }
               
+              // Total = prorated rental + addition + prorated commission
               return proratedRentalAndAddition + proratedCommission
             } catch (error) {
               console.error('Error calculating payment total:', error)
+              // Fallback to simple sum
               return rentalCommission + commission + addition
             }
           }
           
+          // Filter data yang start_date berada dalam selected range, lalu hitung total payment
+          // Menggunakan logika yang sama dengan menu bank account rental
+          // Data sudah difilter oleh API berdasarkan currency dan start_date, jadi langsung hitung saja
           const totalPayment = bankAccountResult.value.data.reduce((sum, row) => {
             const payment = calculatePaymentTotal(row)
             return sum + payment

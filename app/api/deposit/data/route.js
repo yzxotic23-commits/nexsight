@@ -299,27 +299,16 @@ export async function GET(request) {
       .map(item => {
         const processTimeSeconds = timeToSeconds(item.process_time)
         const dateObj = new Date(item.date)
-        const now = new Date()
-        const diffMs = now - dateObj
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-        const diffDays = Math.floor(diffHours / 24)
         
-        let completed = ''
-        if (diffDays > 0) {
-          completed = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
-        } else if (diffHours > 0) {
-          completed = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
-        } else {
-          const diffMinutes = Math.floor(diffMs / (1000 * 60))
-          completed = diffMinutes > 0 ? `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago` : 'Just now'
-        }
+        // Format date as YYYY-MM-DD or readable format
+        const formattedDate = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
         
         return {
           brand: item.line || 'UNKNOWN',
           customerName: item.user_name || item.customer_name || item.customer || 'N/A',
           amount: item.amount ? parseFloat(item.amount) : 0,
           processingTime: Math.round(processTimeSeconds * 10) / 10,
-          completed,
+          completed: formattedDate,
           date: item.date,
           operatorGroup: item.operator_group || ''
         }

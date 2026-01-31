@@ -90,7 +90,8 @@ export async function GET(request) {
       const date = r.date
       if (!date) return
       dailyCounts[date] = (dailyCounts[date] || 0) + 1
-      dailyVolume[date] = (dailyVolume[date] || 0) + (parseFloat(r.amount) || 0)
+      // transactionVolume should be count, not amount
+      dailyVolume[date] = (dailyVolume[date] || 0) + 1
       const secs = timeToSeconds(r.process_time)
       if (!dailyAvgTime[date]) { dailyAvgTime[date] = { sum: 0, count: 0 } }
       if (secs > 0) {

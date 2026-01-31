@@ -10,7 +10,7 @@ import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine, LineChart, Line, LabelList } from 'recharts'
-import { ArrowUpCircle, ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settings, User, ChevronDown, AlertCircle, DollarSign, AlertTriangle, Power, Activity, TrendingUp } from 'lucide-react'
+import { ArrowUpCircle, ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settings, User, ChevronDown, AlertCircle, DollarSign, AlertTriangle, Power, Activity, TrendingUp, ArrowUp, ArrowDown } from 'lucide-react'
 import { useThemeStore } from '@/lib/stores/themeStore'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -168,6 +168,9 @@ export default function WithdrawMonitorPage() {
   // Pagination for Slow Transaction table
   const [slowPageSize, setSlowPageSize] = useState(20)
   const [slowPage, setSlowPage] = useState(1)
+  // Sort for Slow Transaction table - column and direction
+  const [slowSortColumn, setSlowSortColumn] = useState(null) // 'brand', 'customerName', 'amount', 'processingTime', 'date'
+  const [slowSortDirection, setSlowSortDirection] = useState('asc') // 'asc' or 'desc'
 
   // Fetch brands from Supabase brand-market-mapping for the selected currency
   useEffect(() => {
@@ -724,8 +727,8 @@ export default function WithdrawMonitorPage() {
           
           {/* Filter Bar - Right (Brand then Market then Month) */}
           <div className="ml-auto flex items-center gap-3">
-            {/* Brand Dropdown Filter - show for any single market (MYR/SGD/USC) on Overview tab */}
-            {activeTab === 'Overview' && selectedCurrency && selectedCurrency !== 'ALL' ? (
+            {/* Brand Dropdown Filter - show for any single market (MYR/SGD/USC) on all tabs */}
+            {selectedCurrency && selectedCurrency !== 'ALL' ? (
               <div className="relative" ref={brandDropdownRef}>
                 <button
                   onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
@@ -1225,7 +1228,17 @@ export default function WithdrawMonitorPage() {
       {activeTab === 'Brand Comparison' && (
         <div className="space-y-6">
           <ChartContainer title="Brand Avg Processed Time Comparison">
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              // Minimum 300px, maximum 1000px
+              // Each brand needs approximately 50px height
+              const brandCount = brandComparisonData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" domain={[0, 400]} stroke="#6b7280" />
@@ -1282,20 +1295,144 @@ export default function WithdrawMonitorPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-900">
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Brand</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Customer Name</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Amount</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Processing Time</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Date</th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'brand') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('brand')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Brand
+                        {slowSortColumn === 'brand' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'customerName') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('customerName')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Customer Name
+                        {slowSortColumn === 'customerName' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'amount') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('amount')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Amount
+                        {slowSortColumn === 'amount' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'processingTime') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('processingTime')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Processing Time
+                        {slowSortColumn === 'processingTime' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'date') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('date')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Date
+                        {slowSortColumn === 'date' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
                     const slowDetails = Array.isArray(slowTransactionData.details) ? slowTransactionData.details : []
-                    const slowTotal = slowDetails.length
+                    // Sort by selected column
+                    const sortedDetails = [...slowDetails].sort((a, b) => {
+                      if (!slowSortColumn) return 0
+                      
+                      let compareValue = 0
+                      
+                      switch (slowSortColumn) {
+                        case 'brand':
+                          const brandA = (a.brand || '').toString().toUpperCase()
+                          const brandB = (b.brand || '').toString().toUpperCase()
+                          compareValue = brandA.localeCompare(brandB)
+                          break
+                        case 'customerName':
+                          const nameA = (a.customerName || '').toString().toUpperCase()
+                          const nameB = (b.customerName || '').toString().toUpperCase()
+                          compareValue = nameA.localeCompare(nameB)
+                          break
+                        case 'amount':
+                          compareValue = (a.amount || 0) - (b.amount || 0)
+                          break
+                        case 'processingTime':
+                          compareValue = (a.processingTime || 0) - (b.processingTime || 0)
+                          break
+                        case 'date':
+                          const dateA = a.date ? new Date(a.date).getTime() : 0
+                          const dateB = b.date ? new Date(b.date).getTime() : 0
+                          compareValue = dateA - dateB
+                          break
+                        default:
+                          return 0
+                      }
+                      
+                      return slowSortDirection === 'asc' ? compareValue : -compareValue
+                    })
+                    const slowTotal = sortedDetails.length
                     const slowTotalPages = Math.max(1, Math.ceil(slowTotal / slowPageSize))
                     const start = (slowPage - 1) * slowPageSize
-                    const paginated = slowDetails.slice(start, start + slowPageSize)
+                    const paginated = sortedDetails.slice(start, start + slowPageSize)
                     return paginated.map((transaction, index) => {
                       return (
                         <tr key={start + index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
@@ -1377,7 +1514,15 @@ export default function WithdrawMonitorPage() {
       {activeTab === 'Case Volume' && (
         <div className="space-y-6">
           <ChartContainer title="Total Case Volume Comparison">
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              const brandCount = caseVolumeData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />
@@ -1394,7 +1539,15 @@ export default function WithdrawMonitorPage() {
         </ChartContainer>
 
           <ChartContainer title="Total Overdue Transaction Comparison">
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              const brandCount = caseVolumeData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />

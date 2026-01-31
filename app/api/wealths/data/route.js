@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { format } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,35 +19,34 @@ export async function GET(request) {
 
     // Parse dates - use date string directly to avoid timezone issues
     // startDate and endDate are in format YYYY-MM-DD
-    // For database query, we need to ensure we're querying the full day range
+    // Use the provided startDate and endDate directly, not calculate from month
     const start = new Date(startDate)
     const end = new Date(endDate)
     
-    // Calculate start and end of month in local timezone
+    // Set to start of day for startDate and end of day for endDate
+    const startOfRange = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0)
+    const endOfRange = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999)
+    
+    // For database queries, use ISO format
+    const startOfRangeISO = startOfRange.toISOString()
+    const endOfRangeISO = endOfRange.toISOString()
+    
+    // Also calculate start and end of month for month label filtering (if needed)
     const startOfMonth = new Date(start.getFullYear(), start.getMonth(), 1, 0, 0, 0, 0)
     const endOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999)
-    
-    // For database queries, use date-only format (YYYY-MM-DD) to avoid timezone conversion issues
-    // Supabase will compare dates correctly regardless of timezone
-    const startOfMonthStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`
-    const endOfMonthStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(endOfMonth.getDate()).padStart(2, '0')}`
-    
-    // Also keep ISO format for comparison
     const startOfMonthISO = startOfMonth.toISOString()
     const endOfMonthISO = endOfMonth.toISOString()
     
     console.log('Date range calculation:', {
       startDate,
       endDate,
-      startOfMonthStr,
-      endOfMonthStr,
+      startOfRangeISO,
+      endOfRangeISO,
       startOfMonthISO,
-      endOfMonthISO,
-      localStart: startOfMonth.toString(),
-      localEnd: endOfMonth.toString()
+      endOfMonthISO
     })
     
-    // Previous month for comparison
+    // Previous month for comparison (calculate from start date's month)
     const prevStart = new Date(start.getFullYear(), start.getMonth() - 1, 1)
     const prevEnd = new Date(start.getFullYear(), start.getMonth(), 0, 23, 59, 59, 999)
 
@@ -61,20 +61,27 @@ export async function GET(request) {
     console.log('Month label:', monthLabel, 'Date range:', startOfMonth.toISOString(), 'to', endOfMonth.toISOString())
     
     // Helper function to filter by month label only (removed wealths+ filter)
+    // For single day ranges (like "yesterday"), we're more lenient with label filtering
+    const isSingleDayRange = format(start, 'yyyy-MM-dd') === format(end, 'yyyy-MM-dd')
+    
     const filterByMonthLabel = (items) => {
       if (!items || items.length === 0) {
         console.log('No items to filter')
         return []
       }
       
+      // For single day ranges, if date filtering already happened, we can be more lenient
+      // Still try to filter by month label, but if no labels match, include items anyway if date matches
       const filtered = items.filter(item => {
         const labels = Array.isArray(item.labels) ? item.labels : (typeof item.labels === 'string' ? [item.labels] : [])
         
+        // If no labels at all, skip for now (unless it's a single day range and date already matches)
         if (labels.length === 0) {
-          return false
+          // For single day ranges, if the item passed date filter, include it even without labels
+          return isSingleDayRange
         }
         
-        // Only check for month label (removed wealths+ filter)
+        // Check for month label
         const hasMonthLabel = labels.some(label => {
           const labelStr = typeof label === 'string' ? label.toLowerCase() : String(label).toLowerCase()
           return labelStr.includes(monthLabel) || 
@@ -83,10 +90,16 @@ export async function GET(request) {
                  labelStr.includes(monthNames[monthIndex])
         })
         
+        // For single day ranges, if date already matches but label doesn't, still include it
+        // This handles cases where labels might not be set correctly
+        if (isSingleDayRange && !hasMonthLabel) {
+          return true // Include items that passed date filter even if label doesn't match
+        }
+        
         return hasMonthLabel
       })
       
-      console.log(`Filtered ${filtered.length} items from ${items.length} total items by month label only`)
+      console.log(`Filtered ${filtered.length} items from ${items.length} total items by month label (singleDayRange: ${isSingleDayRange})`)
       
       return filtered
     }
@@ -113,8 +126,8 @@ export async function GET(request) {
       .from('jira_issues')
       .select('id, labels, contract_start_date_weo')
       .eq('project_key', 'WEO')
-      .gte('contract_start_date_weo', startOfMonthISO)
-      .lte('contract_start_date_weo', endOfMonthISO)
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
     
     // Also check if there are records with null contract_start_date_weo that should be included
     const { data: nullStartDateRecords, error: nullError } = await supabaseServer
@@ -129,8 +142,8 @@ export async function GET(request) {
       console.error('Error fetching rented accounts:', rentedError)
     }
 
-    console.log(`Fetched ${allRentedAccounts?.length || 0} WEO accounts for the month`)
-    console.log('Date range (contract_start_date_weo):', startOfMonthISO, 'to', endOfMonthISO)
+    console.log(`Fetched ${allRentedAccounts?.length || 0} WEO accounts for the date range`)
+    console.log('Date range (contract_start_date_weo):', startOfRangeISO, 'to', endOfRangeISO)
     
     // Log sample dates to see what's being filtered
     if (allRentedAccounts && allRentedAccounts.length > 0) {
@@ -180,8 +193,8 @@ export async function GET(request) {
       .from('jira_issues')
       .select('total_rental_amount_weo, total_commission_amount_weo, labels, contract_start_date_weo')
       .eq('project_key', 'WEO')
-      .gte('contract_start_date_weo', startOfMonthISO)
-      .lte('contract_start_date_weo', endOfMonthISO)
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
 
     if (rentedAmountError) {
       console.error('Error fetching rented amount:', rentedAmountError)
@@ -199,8 +212,8 @@ export async function GET(request) {
       .from('jira_issues')
       .select('id, labels')
       .eq('project_key', 'WEO')
-      .gte('contract_start_date_weo', startOfMonthISO)
-      .lte('contract_start_date_weo', endOfMonthISO)
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
 
     if (salesQuantityError) {
       console.error('Error fetching sales quantity:', salesQuantityError)
@@ -213,8 +226,8 @@ export async function GET(request) {
       .from('jira_issues')
       .select('contract_start_date_weo, selling_price_weo, total_rental_amount_weo, total_commission_amount_weo, labels')
       .eq('project_key', 'WEO')
-      .gte('contract_start_date_weo', startOfMonthISO)
-      .lte('contract_start_date_weo', endOfMonthISO)
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
       .not('selling_price_weo', 'is', null)
 
     if (salesAmountError) {
@@ -229,13 +242,13 @@ export async function GET(request) {
       return sum + (sellingPrice - rentalAmount - commissionAmount)
     }, 0) || 0
 
-    // 5. Total Account Created: WEO tasks only created in the month
+    // 5. Total Account Created: WEO tasks only created in the date range
     const { data: accountCreatedData, error: accountCreatedError } = await supabaseServer
       .from('jira_issues')
       .select('id, created_at')
       .eq('project_key', 'WEO')
-      .gte('created_at', startOfMonthISO)
-      .lte('created_at', endOfMonthISO)
+      .gte('created_at', startOfRangeISO)
+      .lte('created_at', endOfRangeISO)
 
     if (accountCreatedError) {
       console.error('Error fetching account created:', accountCreatedError)
@@ -268,13 +281,13 @@ export async function GET(request) {
       dailyAccountCreation[date] = (dailyAccountCreation[date] || 0) + 1
     })
 
-    // 7. Rental Trend: daily rental amount over the month (total_rental_amount_weo + total_commission_amount_weo)
+    // 7. Rental Trend: daily rental amount over the date range (total_rental_amount_weo + total_commission_amount_weo)
     const { data: allRentalTrendData, error: rentalTrendError } = await supabaseServer
       .from('jira_issues')
       .select('contract_start_date_weo, total_rental_amount_weo, total_commission_amount_weo, labels')
       .eq('project_key', 'WEO')
-      .gte('contract_start_date_weo', startOfMonthISO)
-      .lte('contract_start_date_weo', endOfMonthISO)
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
 
     if (rentalTrendError) {
       console.error('Error fetching rental trend:', rentalTrendError)
@@ -305,8 +318,8 @@ export async function GET(request) {
       .from('jira_issues')
       .select('contract_start_date_weo')
       .eq('project_key', 'WEO')
-      .gte('contract_start_date_weo', startOfMonthISO)
-      .lte('contract_start_date_weo', endOfMonthISO)
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
 
     if (usageVolumeError) {
       console.error('Error fetching usage volume:', usageVolumeError)
@@ -377,8 +390,8 @@ export async function GET(request) {
       debug: {
         monthLabel,
         dateRange: {
-          start: startOfMonthISO,
-          end: endOfMonthISO,
+          start: startOfRangeISO,
+          end: endOfRangeISO,
         },
         rawCounts: {
           allRentedAccounts: allRentedAccounts?.length || 0,

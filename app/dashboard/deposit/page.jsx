@@ -10,7 +10,7 @@ import KPICard from '@/components/KPICard'
 import ChartContainer from '@/components/ChartContainer'
 import FilterBar from '@/components/FilterBar'
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine, LabelList } from 'recharts'
-import { ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settings, User, ChevronDown, AlertCircle, DollarSign, AlertTriangle, Power, TrendingUp, Activity } from 'lucide-react'
+import { ArrowDownCircle, Clock, Search, Bell, HelpCircle, Settings, User, ChevronDown, AlertCircle, DollarSign, AlertTriangle, Power, TrendingUp, Activity, ArrowUp, ArrowDown } from 'lucide-react'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -83,6 +83,9 @@ export default function DepositMonitorPage() {
   // Pagination for Slow Transaction table
   const [slowPageSize, setSlowPageSize] = useState(20)
   const [slowPage, setSlowPage] = useState(1)
+  // Sort for Slow Transaction table - column and direction
+  const [slowSortColumn, setSlowSortColumn] = useState(null) // 'brand', 'customerName', 'amount', 'processingTime', 'date'
+  const [slowSortDirection, setSlowSortDirection] = useState('asc') // 'asc' or 'desc'
   
   // State for real deposit data from Supabase
   const [realDepositData, setRealDepositData] = useState(null)
@@ -533,11 +536,25 @@ export default function DepositMonitorPage() {
   const slowTransactionData = (() => {
     // Use real data for MYR, SGD, and USC if available
     if ((selectedCurrency === 'MYR' || selectedCurrency === 'SGD' || selectedCurrency === 'USC') && realDepositData && realDepositData.slowTransactions && realDepositData.slowTransactionSummary) {
+      let filteredDetails = realDepositData.slowTransactions || []
+      
+      // Filter by selectedBrand if not 'ALL'
+      if (selectedBrand && selectedBrand !== 'ALL') {
+        filteredDetails = filteredDetails.filter(item => (item.brand || '').toString() === selectedBrand)
+      }
+      
+      // Recalculate summary based on filtered data
+      const totalSlowTransaction = filteredDetails.length
+      const avgProcessingTime = totalSlowTransaction > 0
+        ? filteredDetails.reduce((sum, item) => sum + (item.processingTime || 0), 0) / totalSlowTransaction
+        : 0
+      const topBrand = filteredDetails.length > 0 ? filteredDetails[0].brand : 'N/A'
+      
       return {
-        totalSlowTransaction: realDepositData.slowTransactionSummary.totalSlowTransaction || 0,
-        avgProcessingTime: realDepositData.slowTransactionSummary.avgProcessingTime || 0,
-        brand: realDepositData.slowTransactionSummary.brand || 'N/A',
-        details: realDepositData.slowTransactions || []
+        totalSlowTransaction,
+        avgProcessingTime,
+        brand: topBrand,
+        details: filteredDetails
       }
     }
     
@@ -585,8 +602,8 @@ export default function DepositMonitorPage() {
           
           {/* Filter Bar - Right */}
           <div className="ml-auto flex items-center gap-3">
-            {/* Brand Dropdown Filter - Show for all currencies if brands are available, on Overview tab */}
-            {selectedCurrency !== 'ALL' && activeTab === 'Overview' && availableBrands.length > 1 ? (
+            {/* Brand Dropdown Filter - Show for all currencies if brands are available, on all tabs */}
+            {selectedCurrency !== 'ALL' && availableBrands.length > 1 ? (
               <div className="relative" ref={brandDropdownRef}>
                 <button
                   onClick={() => setIsBrandDropdownOpen(!isBrandDropdownOpen)}
@@ -1184,7 +1201,15 @@ export default function DepositMonitorPage() {
           ) : (
             <>
           <ChartContainer title="Brand Avg Processed Time Comparison">
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              const brandCount = brandComparisonData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" domain={[0, 80]} stroke="#6b7280" />
@@ -1208,7 +1233,15 @@ export default function DepositMonitorPage() {
         </ChartContainer>
 
           <ChartContainer title="Coverage Rate Comparison">
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              const brandCount = brandComparisonData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" domain={[0, 100]} stroke="#6b7280" />
@@ -1269,11 +1302,101 @@ export default function DepositMonitorPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-900">
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Brand</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Customer Name</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Amount</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Processing Time</th>
-                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Completed</th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'brand') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('brand')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Brand
+                        {slowSortColumn === 'brand' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'customerName') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('customerName')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Customer Name
+                        {slowSortColumn === 'customerName' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'amount') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('amount')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Amount
+                        {slowSortColumn === 'amount' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'processingTime') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('processingTime')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Processing Time
+                        {slowSortColumn === 'processingTime' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="text-left py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                      onClick={() => {
+                        if (slowSortColumn === 'date') {
+                          setSlowSortDirection(slowSortDirection === 'asc' ? 'desc' : 'asc')
+                        } else {
+                          setSlowSortColumn('date')
+                          setSlowSortDirection('asc')
+                        }
+                        setSlowPage(1)
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        Completed
+                        {slowSortColumn === 'date' && (
+                          slowSortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        )}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1288,10 +1411,44 @@ export default function DepositMonitorPage() {
                         </tr>
                       )
                     }
-                    const total = details.length
+                    // Sort by selected column
+                    const sortedDetails = [...details].sort((a, b) => {
+                      if (!slowSortColumn) return 0
+                      
+                      let compareValue = 0
+                      
+                      switch (slowSortColumn) {
+                        case 'brand':
+                          const brandA = (a.brand || '').toString().toUpperCase()
+                          const brandB = (b.brand || '').toString().toUpperCase()
+                          compareValue = brandA.localeCompare(brandB)
+                          break
+                        case 'customerName':
+                          const nameA = (a.customerName || '').toString().toUpperCase()
+                          const nameB = (b.customerName || '').toString().toUpperCase()
+                          compareValue = nameA.localeCompare(nameB)
+                          break
+                        case 'amount':
+                          compareValue = (a.amount || 0) - (b.amount || 0)
+                          break
+                        case 'processingTime':
+                          compareValue = (a.processingTime || 0) - (b.processingTime || 0)
+                          break
+                        case 'date':
+                          const dateA = a.date ? new Date(a.date).getTime() : 0
+                          const dateB = b.date ? new Date(b.date).getTime() : 0
+                          compareValue = dateA - dateB
+                          break
+                        default:
+                          return 0
+                      }
+                      
+                      return slowSortDirection === 'asc' ? compareValue : -compareValue
+                    })
+                    const total = sortedDetails.length
                     const totalPages = Math.max(1, Math.ceil(total / slowPageSize))
                     const start = (slowPage - 1) * slowPageSize
-                    const paginated = details.slice(start, start + slowPageSize)
+                    const paginated = sortedDetails.slice(start, start + slowPageSize)
                     return paginated.map((transaction, index) => (
                       <tr key={start + index} className="border-b border-gray-100 dark:border-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="py-4 px-4">
@@ -1315,7 +1472,7 @@ export default function DepositMonitorPage() {
                           </span>
                         </td>
                         <td className="py-4 px-4 text-sm text-gray-600 dark:text-gray-300">
-                          {transaction.completed || 'N/A'}
+                          {transaction.date ? new Date(transaction.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : (transaction.completed || 'N/A')}
                         </td>
                       </tr>
                     ))
@@ -1383,18 +1540,26 @@ export default function DepositMonitorPage() {
             </div>
           ) : (
             <>
-          <ChartContainer title="Total Case Volume Comparison">
-            <ResponsiveContainer width="100%" height={300}>
+          <ChartContainer title="Total Case Volume">
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              const brandCount = caseVolumeData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />
                 <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
-                <Bar dataKey="totalCase" radius={[0, 4, 4, 0]} fill="#ef4444">
+                <Bar dataKey="totalTransAutomation" radius={[0, 4, 4, 0]} fill="#ef4444">
                   <LabelList 
-                    dataKey="totalCase" 
+                    dataKey="totalTransAutomation" 
                     position="right" 
-                    formatter={(value) => value.toFixed(2) + '%'}
+                    formatter={(value) => formatNumber(value)}
                     className="text-gray-700 dark:text-gray-300"
                     style={{ fontSize: '12px', fontWeight: 600 }}
                   />
@@ -1404,7 +1569,15 @@ export default function DepositMonitorPage() {
           </ChartContainer>
 
           <ChartContainer title="Total Overdue Transaction Comparison">
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={(() => {
+              // Calculate dynamic height based on number of brands
+              const brandCount = caseVolumeData.length
+              const minHeight = 300
+              const maxHeight = 1000
+              const heightPerBrand = 50
+              const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
+              return calculatedHeight
+            })()}>
               <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 80, left: 20, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />

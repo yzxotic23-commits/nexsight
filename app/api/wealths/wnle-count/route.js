@@ -16,13 +16,16 @@ export async function GET(request) {
       )
     }
 
-    // Parse dates
+    // Parse dates - use startDate and endDate directly
     const start = new Date(startDate)
     const end = new Date(endDate)
-    const startOfMonth = new Date(start.getFullYear(), start.getMonth(), 1)
-    const endOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999)
+    
+    // Set to start of day for startDate and end of day for endDate
+    const startOfRange = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0)
+    const endOfRange = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999)
 
     // Format month label for label matching (e.g., "jan-2026", "jan2026", "january-2026")
+    // Use start date's month for label filtering
     const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
     const monthIndex = start.getMonth()
     const year = start.getFullYear()
@@ -30,13 +33,13 @@ export async function GET(request) {
     const monthLabelAlt1 = `${monthNames[monthIndex]}${year}` // e.g., "jan2026"
     const monthLabelAlt2 = `${monthNames[monthIndex]}-${year.toString().slice(-2)}` // e.g., "jan-26"
 
-    // Fetch WNLE data with created_at date range
+    // Fetch WNLE data with created_at date range using provided dates
     const { data: wnleDataRaw, error: wnleError } = await supabaseServer
       .from('jira_issues')
       .select('id, labels, created_at')
       .eq('project_key', 'WNLE')
-      .gte('created_at', startOfMonth.toISOString())
-      .lte('created_at', endOfMonth.toISOString())
+      .gte('created_at', startOfRange.toISOString())
+      .lte('created_at', endOfRange.toISOString())
 
     if (wnleError) {
       console.error('Error fetching WNLE data:', wnleError)
@@ -83,8 +86,8 @@ export async function GET(request) {
         totalWNLE: wnleDataRaw?.length || 0,
         filteredWNLE: count,
         dateRange: {
-          start: startOfMonth.toISOString(),
-          end: endOfMonth.toISOString(),
+          start: startOfRange.toISOString(),
+          end: endOfRange.toISOString(),
         }
       }
     })
