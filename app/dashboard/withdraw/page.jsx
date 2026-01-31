@@ -16,7 +16,7 @@ import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { useToast } from '@/lib/toast-context'
-import { cachedFetch } from '@/lib/hooks/useCachedFetch'
+import { cachedFetch, clearCache } from '@/lib/hooks/useCachedFetch'
 
 // Custom Tooltip Component - Updated design
 const CustomTooltip = ({ active, payload, label }) => {
@@ -198,7 +198,7 @@ export default function WithdrawMonitorPage() {
               try {
                 const startDate = format(selectedMonth.start, 'yyyy-MM-dd')
                 const endDate = format(selectedMonth.end, 'yyyy-MM-dd')
-                const jd = await cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=ALL`)
+                const jd = await cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=ALL`, {}, 30 * 1000, true)
                 const bc = (jd?.data?.brandComparison || []).map(b => b.brand).filter(Boolean)
                 if (bc.length > 0) {
                   setBrands(['ALL', ...bc])
@@ -266,22 +266,27 @@ export default function WithdrawMonitorPage() {
   useEffect(() => {
     async function fetchWithdrawData() {
 
+      // Format date as YYYY-MM-DD using date-fns format to avoid timezone issues
       const formatLocalDate = (date) => {
         const dateObj = date instanceof Date ? date : new Date(date)
-        const year = dateObj.getFullYear()
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-        const day = String(dateObj.getDate()).padStart(2, '0')
-        return `${year}-${month}-${day}`
+        // Use date-fns format to ensure consistent date formatting without timezone issues
+        return format(dateObj, 'yyyy-MM-dd')
       }
 
       const startDate = formatLocalDate(selectedMonth.start)
       const endDate = formatLocalDate(selectedMonth.end)
 
+      // Debug: Log date range being sent to API
+      console.log('Withdraw Monitor - Date range:', { startDate, endDate, start: selectedMonth.start, end: selectedMonth.end })
+
+      // Clear cache for withdraw data when date range changes to ensure fresh data
+      clearCache('/api/withdraw/data')
+
       try {
         if (selectedCurrency === 'ALL') {
           const markets = ['MYR', 'SGD', 'USC']
           const promises = markets.map(m =>
-            cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${m}&brand=ALL`).catch(() => null)
+            cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${m}&brand=ALL`, {}, 30 * 1000, true).catch(() => null)
           )
           const results = await Promise.all(promises)
           const dataByMarket = {}
@@ -352,7 +357,7 @@ export default function WithdrawMonitorPage() {
           }
           setWithdrawData(mapped)
         } else {
-          const result = await cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`)
+          const result = await cachedFetch(`/api/withdraw/data?startDate=${startDate}&endDate=${endDate}&currency=${selectedCurrency}&brand=${selectedBrand}`, {}, 30 * 1000, true)
           if (result.success && result.data) {
             const d = result.data
             const mapped = {

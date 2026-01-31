@@ -56,13 +56,25 @@ export async function GET(request) {
       })
     }
 
+    // Debug: Log date range received
+    console.log(`Deposit API - Fetching ${currency} data:`, { tableName, startDate, endDate })
+    
     // Build query - temporarily using select('*') to avoid column mismatch errors
     // TODO: Optimize to select only needed columns once schema is confirmed
     let query = supabaseDataServer
       .from(tableName)
       .select('*')
-      .gte('date', startDate)
-      .lte('date', endDate)
+    
+    // Handle single date vs date range
+    if (startDate === endDate) {
+      // For single date, use eq() for exact match
+      query = query.eq('date', startDate)
+      console.log(`Deposit API - Single date query: date = '${startDate}'`)
+    } else {
+      // For date range, use gte and lte
+      query = query.gte('date', startDate).lte('date', endDate)
+      console.log(`Deposit API - Date range query: date >= '${startDate}' AND date <= '${endDate}'`)
+    }
 
     // Filter by brand using 'line' column if provided and not 'ALL'
     if (brand && brand !== 'ALL') {
@@ -78,6 +90,17 @@ export async function GET(request) {
         { error: 'Failed to fetch deposit data', details: error.message },
         { status: 500 }
       )
+    }
+
+    // Debug: Log fetched data count and sample dates
+    console.log(`Deposit API - Fetched ${depositData?.length || 0} records from ${tableName} for date range ${startDate} to ${endDate}`)
+    if (depositData && depositData.length > 0) {
+      const sampleDates = depositData.slice(0, 5).map(d => d.date).filter(Boolean)
+      const uniqueDates = [...new Set(depositData.map(d => d.date).filter(Boolean))]
+      console.log(`Deposit API - Sample dates from ${tableName}:`, sampleDates)
+      console.log(`Deposit API - Unique dates in result:`, uniqueDates)
+    } else {
+      console.log(`Deposit API - No data found for ${tableName} with date range ${startDate} to ${endDate}`)
     }
     
     // If no data found, return empty structure

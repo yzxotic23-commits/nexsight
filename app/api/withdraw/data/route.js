@@ -47,12 +47,24 @@ export async function GET(request) {
       }})
     }
 
+    // Debug: Log date range received
+    console.log(`Withdraw API - Fetching ${currency} data:`, { tableName, startDate, endDate })
+    
     // Build query
     let query = supabaseDataServer
       .from(tableName)
       .select('*')
-      .gte('date', startDate)
-      .lte('date', endDate)
+    
+    // Handle single date vs date range
+    if (startDate === endDate) {
+      // For single date, use eq() for exact match
+      query = query.eq('date', startDate)
+      console.log(`Withdraw API - Single date query: date = '${startDate}'`)
+    } else {
+      // For date range, use gte and lte
+      query = query.gte('date', startDate).lte('date', endDate)
+      console.log(`Withdraw API - Date range query: date >= '${startDate}' AND date <= '${endDate}'`)
+    }
 
     if (brand && brand !== 'ALL') {
       const brandTrim = String(brand).trim()
@@ -63,6 +75,17 @@ export async function GET(request) {
     if (error) {
       console.error('Error fetching withdraw data:', error)
       return NextResponse.json({ error: 'Failed to fetch withdraw data', details: error.message }, { status: 500 })
+    }
+
+    // Debug: Log fetched data count and sample dates
+    console.log(`Withdraw API - Fetched ${rows?.length || 0} records from ${tableName} for date range ${startDate} to ${endDate}`)
+    if (rows && rows.length > 0) {
+      const sampleDates = rows.slice(0, 5).map(r => r.date).filter(Boolean)
+      const uniqueDates = [...new Set(rows.map(r => r.date).filter(Boolean))]
+      console.log(`Withdraw API - Sample dates from ${tableName}:`, sampleDates)
+      console.log(`Withdraw API - Unique dates in result:`, uniqueDates)
+    } else {
+      console.log(`Withdraw API - No data found for ${tableName} with date range ${startDate} to ${endDate}`)
     }
 
     // Total Transaction = number of rows
