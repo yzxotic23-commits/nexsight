@@ -235,26 +235,26 @@ export default function DepositMonitorPage() {
         const endDate = formatLocalDate(endDateObj)
         
         // Debug: Log date range being sent to API with detailed info
-        console.log('Deposit Monitor - Date range:', {
-          startDate,
-          endDate,
-          startDateObjISO: startDateObj.toISOString(),
-          endDateObjISO: endDateObj.toISOString(),
-          startDateLocal: format(startDateObj, 'yyyy-MM-dd HH:mm:ss'),
-          endDateLocal: format(endDateObj, 'yyyy-MM-dd HH:mm:ss'),
-          startDateComponents: {
-            year: startDateObj.getFullYear(),
-            month: startDateObj.getMonth() + 1,
-            day: startDateObj.getDate()
-          },
-          endDateComponents: {
-            year: endDateObj.getFullYear(),
-            month: endDateObj.getMonth() + 1,
-            day: endDateObj.getDate()
-          },
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          selectedMonth: selectedMonth
+        console.log('=== Deposit Monitor - Date range being sent to API ===')
+        console.log('📅 START DATE:', {
+          formatted: startDate,
+          year: startDateObj.getFullYear(),
+          month: startDateObj.getMonth() + 1,
+          day: startDateObj.getDate(),
+          isoString: startDateObj.toISOString(),
+          localString: format(startDateObj, 'yyyy-MM-dd HH:mm:ss')
         })
+        console.log('📅 END DATE:', {
+          formatted: endDate,
+          year: endDateObj.getFullYear(),
+          month: endDateObj.getMonth() + 1,
+          day: endDateObj.getDate(),
+          isoString: endDateObj.toISOString(),
+          localString: format(endDateObj, 'yyyy-MM-dd HH:mm:ss')
+        })
+        console.log('🌍 Timezone:', Intl.DateTimeFormat().resolvedOptions().timeZone)
+        console.log('🔗 API URL will be:', `/api/deposit/data?startDate=${startDate}&endDate=${endDate}`)
+        console.log('======================================================')
         
         // Clear cache for deposit data when date range changes to ensure fresh data
         clearCache('/api/deposit/data')

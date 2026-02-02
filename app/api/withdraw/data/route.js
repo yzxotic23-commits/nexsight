@@ -48,17 +48,13 @@ export async function GET(request) {
     }
 
     // Debug: Log date range received with detailed info
-    console.log(`Withdraw API - Fetching ${currency} data:`, { 
-      tableName, 
-      startDate, 
-      endDate,
-      startDateType: typeof startDate,
-      endDateType: typeof endDate,
-      startDateLength: startDate?.length,
-      endDateLength: endDate?.length,
-      startDateTrimmed: startDate?.trim(),
-      endDateTrimmed: endDate?.trim()
-    })
+    console.log(`=== Withdraw API - Received request ===`)
+    console.log(`Currency: ${currency}, Table: ${tableName}`)
+    console.log(`📅 Start Date: "${startDate}" (type: ${typeof startDate}, length: ${startDate?.length})`)
+    console.log(`📅 End Date: "${endDate}" (type: ${typeof endDate}, length: ${endDate?.length})`)
+    console.log(`Trimmed Start: "${startDate?.trim()}"`)
+    console.log(`Trimmed End: "${endDate?.trim()}"`)
+    console.log(`=======================================`)
     
     // Build query
     let query = supabaseDataServer
