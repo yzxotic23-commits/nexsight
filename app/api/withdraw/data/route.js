@@ -54,6 +54,12 @@ export async function GET(request) {
     console.log(`📅 End Date: "${endDate}" (type: ${typeof endDate}, length: ${endDate?.length})`)
     console.log(`Trimmed Start: "${startDate?.trim()}"`)
     console.log(`Trimmed End: "${endDate?.trim()}"`)
+    
+    // Special logging for USC to debug
+    if (currency === 'USC') {
+      console.log(`⚠️ USC SPECIAL DEBUG - Table: ${tableName}`)
+      console.log(`⚠️ USC Date Range: ${startDate} to ${endDate}`)
+    }
     console.log(`=======================================`)
     
     // Build query
@@ -91,6 +97,12 @@ export async function GET(request) {
 
     // Debug: Log fetched data count and sample dates
     console.log(`Withdraw API - Fetched ${rows?.length || 0} records from ${tableName} for date range ${startDate} to ${endDate}`)
+    
+    // Special logging for USC
+    if (currency === 'USC') {
+      console.log(`⚠️ USC RESULTS - Found ${rows?.length || 0} records`)
+    }
+    
     if (rows && rows.length > 0) {
       const sampleDates = rows.slice(0, 5).map(r => r.date).filter(Boolean)
       const uniqueDates = [...new Set(rows.map(r => r.date).filter(Boolean))]
@@ -101,16 +113,32 @@ export async function GET(request) {
       console.log(`Withdraw API - Date range in data: min=${minDate ? new Date(minDate).toISOString().split('T')[0] : 'N/A'}, max=${maxDate ? new Date(maxDate).toISOString().split('T')[0] : 'N/A'}`)
       console.log(`Withdraw API - Requested date range: ${startDate} to ${endDate}`)
     } else {
-      console.log(`Withdraw API - No data found for ${tableName} with date range ${startDate} to ${endDate}`)
+      console.log(`❌ Withdraw API - No data found for ${tableName} with date range ${startDate} to ${endDate}`)
+      
       // Try to check if there's any data in the table at all
+      console.log(`Checking if ${tableName} table has any data...`)
       const { data: allData, error: checkError } = await supabaseDataServer
         .from(tableName)
         .select('date')
         .limit(10)
         .order('date', { ascending: false })
-      if (!checkError && allData && allData.length > 0) {
+      
+      if (checkError) {
+        console.error(`❌ Error checking ${tableName} table:`, checkError.message)
+        if (currency === 'USC') {
+          console.log(`⚠️ USC TABLE ERROR - Table might not exist or no permissions`)
+        }
+      } else if (allData && allData.length > 0) {
         const latestDates = allData.map(d => d.date).filter(Boolean)
-        console.log(`Withdraw API - Latest dates in ${tableName} table:`, latestDates)
+        console.log(`✅ ${tableName} table has data. Latest dates:`, latestDates)
+        if (currency === 'USC') {
+          console.log(`⚠️ USC TABLE HAS DATA - But query returned no results. Check date format or query logic.`)
+        }
+      } else {
+        console.log(`⚠️ ${tableName} table exists but is EMPTY`)
+        if (currency === 'USC') {
+          console.log(`⚠️ USC TABLE IS EMPTY - No data in withdraw_usc table`)
+        }
       }
     }
 
