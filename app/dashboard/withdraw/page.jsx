@@ -270,14 +270,32 @@ export default function WithdrawMonitorPage() {
       const formatLocalDate = (date) => {
         const dateObj = date instanceof Date ? date : new Date(date)
         // Use date-fns format to ensure consistent date formatting without timezone issues
-        return format(dateObj, 'yyyy-MM-dd')
+        const formatted = format(dateObj, 'yyyy-MM-dd')
+        return formatted
       }
 
-      const startDate = formatLocalDate(selectedMonth.start)
-      const endDate = formatLocalDate(selectedMonth.end)
+      // Ensure dates are Date objects
+      const startDateObj = selectedMonth.start instanceof Date 
+        ? selectedMonth.start 
+        : new Date(selectedMonth.start)
+      const endDateObj = selectedMonth.end instanceof Date 
+        ? selectedMonth.end 
+        : new Date(selectedMonth.end)
 
-      // Debug: Log date range being sent to API
-      console.log('Withdraw Monitor - Date range:', { startDate, endDate, start: selectedMonth.start, end: selectedMonth.end })
+      const startDate = formatLocalDate(startDateObj)
+      const endDate = formatLocalDate(endDateObj)
+
+      // Debug: Log date range being sent to API with detailed info
+      console.log('Withdraw Monitor - Date range:', {
+        startDate,
+        endDate,
+        startDateObj: startDateObj.toISOString(),
+        endDateObj: endDateObj.toISOString(),
+        startDateLocal: format(startDateObj, 'yyyy-MM-dd HH:mm:ss'),
+        endDateLocal: format(endDateObj, 'yyyy-MM-dd HH:mm:ss'),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        selectedMonth: selectedMonth
+      })
 
       // Clear cache for withdraw data when date range changes to ensure fresh data
       clearCache('/api/withdraw/data')
@@ -1244,10 +1262,10 @@ export default function WithdrawMonitorPage() {
               const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
               return calculatedHeight
             })()}>
-              <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={brandComparisonData} layout="vertical" margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" domain={[0, 400]} stroke="#6b7280" />
-                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
+                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={100} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
                 <ReferenceLine x={300} stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} />
                 <Bar dataKey="avgTime" radius={[0, 4, 4, 0]}>
@@ -1528,10 +1546,10 @@ export default function WithdrawMonitorPage() {
               const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
               return calculatedHeight
             })()}>
-              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />
-                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
+                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={100} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
                 <Bar dataKey="cases" radius={[0, 4, 4, 0]}>
                   {caseVolumeData.map((entry, idx) => (
@@ -1553,10 +1571,10 @@ export default function WithdrawMonitorPage() {
               const calculatedHeight = Math.max(minHeight, Math.min(maxHeight, brandCount * heightPerBrand + 100))
               return calculatedHeight
             })()}>
-              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
+              <BarChart data={caseVolumeData} layout="vertical" margin={{ top: 20, right: 30, left: 30, bottom: 40 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} horizontal={false} />
                 <XAxis type="number" stroke="#6b7280" />
-                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={80} />
+                <YAxis type="category" dataKey="brand" stroke="#6b7280" width={100} />
                 <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#DEC05F', strokeWidth: 1, strokeDasharray: '5 5' }} />
                 <Bar dataKey="totalOverdue" radius={[0, 4, 4, 0]}>
                   {caseVolumeData.map((entry, idx) => (
