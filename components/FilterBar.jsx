@@ -232,6 +232,7 @@ export default function FilterBar({ showCurrency = false, swapOrder = false }) {
   const customDateRangeButton = (
     <div className="relative" ref={customDateRangeRef}>
       <button
+<<<<<<< HEAD
         onClick={() => {
           // Reset calendar to current month when opening custom date range
           setCurrentMonth(new Date())
