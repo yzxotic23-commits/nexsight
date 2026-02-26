@@ -1,0 +1,417 @@
+import { NextResponse } from 'next/server'
+import { supabaseServer } from '@/lib/supabase/server'
+import { format } from 'date-fns'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(request) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: 'startDate and endDate are required' },
+        { status: 400 }
+      )
+    }
+
+    // Parse dates - use date string directly to avoid timezone issues
+    // startDate and endDate are in format YYYY-MM-DD
+    // Use the provided startDate and endDate directly, not calculate from month
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    
+    // Set to start of day for startDate and end of day for endDate
+    const startOfRange = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0)
+    const endOfRange = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999)
+    
+    // For database queries, use ISO format
+    const startOfRangeISO = startOfRange.toISOString()
+    const endOfRangeISO = endOfRange.toISOString()
+    
+    // Also calculate start and end of month for month label filtering (if needed)
+    const startOfMonth = new Date(start.getFullYear(), start.getMonth(), 1, 0, 0, 0, 0)
+    const endOfMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999)
+    const startOfMonthISO = startOfMonth.toISOString()
+    const endOfMonthISO = endOfMonth.toISOString()
+    
+    console.log('Date range calculation:', {
+      startDate,
+      endDate,
+      startOfRangeISO,
+      endOfRangeISO,
+      startOfMonthISO,
+      endOfMonthISO
+    })
+    
+    // Previous month for comparison (calculate from start date's month)
+    const prevStart = new Date(start.getFullYear(), start.getMonth() - 1, 1)
+    const prevEnd = new Date(start.getFullYear(), start.getMonth(), 0, 23, 59, 59, 999)
+
+    // Format month label for label matching (e.g., "jan-2026", "jan2026", "january-2026")
+    const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    const monthIndex = start.getMonth()
+    const year = start.getFullYear()
+    const monthLabel = `${monthNames[monthIndex]}-${year}` // e.g., "jan-2026"
+    const monthLabelAlt1 = `${monthNames[monthIndex]}${year}` // e.g., "jan2026"
+    const monthLabelAlt2 = `${monthNames[monthIndex]}-${year.toString().slice(-2)}` // e.g., "jan-26"
+    
+    console.log('Month label:', monthLabel, 'Date range:', startOfMonth.toISOString(), 'to', endOfMonth.toISOString())
+    
+    // Helper function to filter by month label only (removed wealths+ filter)
+    // For single day ranges (like "yesterday"), we're more lenient with label filtering
+    const isSingleDayRange = format(start, 'yyyy-MM-dd') === format(end, 'yyyy-MM-dd')
+    
+    const filterByMonthLabel = (items) => {
+      if (!items || items.length === 0) {
+        console.log('No items to filter')
+        return []
+      }
+      
+      // For single day ranges, if date filtering already happened, we can be more lenient
+      // Still try to filter by month label, but if no labels match, include items anyway if date matches
+      const filtered = items.filter(item => {
+        const labels = Array.isArray(item.labels) ? item.labels : (typeof item.labels === 'string' ? [item.labels] : [])
+        
+        // If no labels at all, skip for now (unless it's a single day range and date already matches)
+        if (labels.length === 0) {
+          // For single day ranges, if the item passed date filter, include it even without labels
+          return isSingleDayRange
+        }
+        
+        // Check for month label
+        const hasMonthLabel = labels.some(label => {
+          const labelStr = typeof label === 'string' ? label.toLowerCase() : String(label).toLowerCase()
+          return labelStr.includes(monthLabel) || 
+                 labelStr.includes(monthLabelAlt1) || 
+                 labelStr.includes(monthLabelAlt2) ||
+                 labelStr.includes(monthNames[monthIndex])
+        })
+        
+        // For single day ranges, if date already matches but label doesn't, still include it
+        // This handles cases where labels might not be set correctly
+        if (isSingleDayRange && !hasMonthLabel) {
+          return true // Include items that passed date filter even if label doesn't match
+        }
+        
+        return hasMonthLabel
+      })
+      
+      console.log(`Filtered ${filtered.length} items from ${items.length} total items by month label (singleDayRange: ${isSingleDayRange})`)
+      
+      return filtered
+    }
+
+    // 1. Total Rented Accounts: project_key = 'WEO' AND label contains 'wealths+' AND month label
+    // First, let's check if there's any WEO data at all
+    const { data: allWEOData, error: allWEOError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, labels, created_at, project_key')
+      .eq('project_key', 'WEO')
+      .limit(5)
+
+    console.log('Sample WEO data (first 5):', JSON.stringify(allWEOData, null, 2))
+    
+    // First, get all WEO data without date filter to see total count
+    const { data: allWEOWithoutFilter, error: allWEOWithoutFilterError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, contract_start_date_weo')
+      .eq('project_key', 'WEO')
+    
+    console.log(`Total WEO records in database: ${allWEOWithoutFilter?.length || 0}`)
+    
+    const { data: allRentedAccounts, error: rentedError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, labels, contract_start_date_weo')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
+    
+    // Also check if there are records with null contract_start_date_weo that should be included
+    const { data: nullStartDateRecords, error: nullError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, labels, contract_start_date_weo')
+      .eq('project_key', 'WEO')
+      .is('contract_start_date_weo', null)
+    
+    console.log(`WEO records with null contract_start_date_weo: ${nullStartDateRecords?.length || 0}`)
+
+    if (rentedError) {
+      console.error('Error fetching rented accounts:', rentedError)
+    }
+
+    console.log(`Fetched ${allRentedAccounts?.length || 0} WEO accounts for the date range`)
+    console.log('Date range (contract_start_date_weo):', startOfRangeISO, 'to', endOfRangeISO)
+    
+    // Log sample dates to see what's being filtered
+    if (allRentedAccounts && allRentedAccounts.length > 0) {
+      const sampleDates = allRentedAccounts.slice(0, 5).map(item => ({
+        id: item.id,
+        contract_start_date_weo: item.contract_start_date_weo
+      }))
+      console.log('Sample contract_start_date_weo from filtered results:', sampleDates)
+    }
+    
+    // Check if there are records just outside the range
+    const dayBeforeStart = new Date(startOfMonth)
+    dayBeforeStart.setDate(dayBeforeStart.getDate() - 1)
+    const dayAfterEnd = new Date(endOfMonth)
+    dayAfterEnd.setDate(dayAfterEnd.getDate() + 1)
+    
+    const { data: justOutsideRange, error: outsideError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, contract_start_date_weo, labels')
+      .eq('project_key', 'WEO')
+      .or(`contract_start_date_weo.lte.${dayBeforeStart.toISOString()},contract_start_date_weo.gte.${dayAfterEnd.toISOString()}`)
+      .limit(10)
+    
+    console.log(`WEO records just outside date range: ${justOutsideRange?.length || 0}`)
+    if (justOutsideRange && justOutsideRange.length > 0) {
+      console.log('Sample records outside range:', justOutsideRange.slice(0, 3).map(item => ({
+        id: item.id,
+        contract_start_date_weo: item.contract_start_date_weo,
+        labels: item.labels
+      })))
+    }
+    
+    if (allRentedAccounts && allRentedAccounts.length > 0) {
+      console.log('Sample labels from first 3 items:', allRentedAccounts.slice(0, 3).map(item => ({
+        labels: item.labels,
+        labelsType: typeof item.labels,
+        isArray: Array.isArray(item.labels),
+        contract_start_date_weo: item.contract_start_date_weo
+      })))
+    }
+    
+    const rentedAccounts = filterByMonthLabel(allRentedAccounts)
+    console.log(`After filtering by month label: ${rentedAccounts?.length || 0} rented accounts`)
+
+    // 2. Total Rented Amount: sum of (total_rental_amount_weo + total_commission_amount_weo)
+    const { data: rentedAmountDataRaw, error: rentedAmountError } = await supabaseServer
+      .from('jira_issues')
+      .select('total_rental_amount_weo, total_commission_amount_weo, labels, contract_start_date_weo')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
+
+    if (rentedAmountError) {
+      console.error('Error fetching rented amount:', rentedAmountError)
+    }
+
+    const rentedAmountData = filterByMonthLabel(rentedAmountDataRaw)
+    const totalRentedAmount = rentedAmountData?.reduce((sum, item) => {
+      const rentalAmount = parseFloat(item.total_rental_amount_weo) || 0
+      const commissionAmount = parseFloat(item.total_commission_amount_weo) || 0
+      return sum + rentalAmount + commissionAmount
+    }, 0) || 0
+
+    // 3. Total Sales Quantity: WEO tasks with month label (same as Total Rented Accounts)
+    const { data: salesQuantityDataRaw, error: salesQuantityError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, labels')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
+
+    if (salesQuantityError) {
+      console.error('Error fetching sales quantity:', salesQuantityError)
+    }
+
+    const salesQuantityData = filterByMonthLabel(salesQuantityDataRaw)
+
+    // 4. Total Sales Amount: selling_price_weo - (total_rental_amount_weo + total_commission_amount_weo)
+    const { data: salesAmountDataRaw, error: salesAmountError } = await supabaseServer
+      .from('jira_issues')
+      .select('contract_start_date_weo, selling_price_weo, total_rental_amount_weo, total_commission_amount_weo, labels')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
+      .not('selling_price_weo', 'is', null)
+
+    if (salesAmountError) {
+      console.error('Error fetching sales amount:', salesAmountError)
+    }
+
+    const salesAmountData = filterByMonthLabel(salesAmountDataRaw)
+    const totalSalesAmount = salesAmountData?.reduce((sum, item) => {
+      const sellingPrice = parseFloat(item.selling_price_weo) || 0
+      const rentalAmount = parseFloat(item.total_rental_amount_weo) || 0
+      const commissionAmount = parseFloat(item.total_commission_amount_weo) || 0
+      return sum + (sellingPrice - rentalAmount - commissionAmount)
+    }, 0) || 0
+
+    // 5. Total Account Created: WEO tasks only created in the date range
+    const { data: accountCreatedData, error: accountCreatedError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, created_at')
+      .eq('project_key', 'WEO')
+      .gte('created_at', startOfRangeISO)
+      .lte('created_at', endOfRangeISO)
+
+    if (accountCreatedError) {
+      console.error('Error fetching account created:', accountCreatedError)
+    }
+
+    // Previous month account created for growth rate (WEO only)
+    const prevStartISOForAccount = prevStart.toISOString()
+    const prevEndISOForAccount = prevEnd.toISOString()
+    const { data: prevAccountCreatedData, error: prevAccountError } = await supabaseServer
+      .from('jira_issues')
+      .select('id')
+      .eq('project_key', 'WEO')
+      .gte('created_at', prevStartISOForAccount)
+      .lte('created_at', prevEndISOForAccount)
+
+    if (prevAccountError) {
+      console.error('Error fetching previous month account created:', prevAccountError)
+    }
+
+    const totalAccountCreated = accountCreatedData?.length || 0
+    const prevMonthAccountCreated = prevAccountCreatedData?.length || 0
+    const growthRate = prevMonthAccountCreated > 0 
+      ? ((totalAccountCreated - prevMonthAccountCreated) / prevMonthAccountCreated) * 100 
+      : 0
+
+    // 6. Daily Account Creation: group by created_at date
+    const dailyAccountCreation = {}
+    accountCreatedData?.forEach(item => {
+      const date = new Date(item.created_at).toISOString().split('T')[0]
+      dailyAccountCreation[date] = (dailyAccountCreation[date] || 0) + 1
+    })
+
+    // 7. Rental Trend: daily rental amount over the date range (total_rental_amount_weo + total_commission_amount_weo)
+    const { data: allRentalTrendData, error: rentalTrendError } = await supabaseServer
+      .from('jira_issues')
+      .select('contract_start_date_weo, total_rental_amount_weo, total_commission_amount_weo, labels')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
+
+    if (rentalTrendError) {
+      console.error('Error fetching rental trend:', rentalTrendError)
+    }
+
+    const rentalTrendData = filterByMonthLabel(allRentalTrendData)
+    const rentalTrend = {}
+    rentalTrendData?.forEach(item => {
+      const date = new Date(item.contract_start_date_weo).toISOString().split('T')[0]
+      const rentalAmount = parseFloat(item.total_rental_amount_weo) || 0
+      const commissionAmount = parseFloat(item.total_commission_amount_weo) || 0
+      rentalTrend[date] = (rentalTrend[date] || 0) + rentalAmount + commissionAmount
+    })
+
+    // 8. Sales Trend: daily sales amount over the month (already filtered by month label)
+    const salesTrend = {}
+    salesAmountData?.forEach(item => {
+      const date = new Date(item.contract_start_date_weo).toISOString().split('T')[0]
+      const sellingPrice = parseFloat(item.selling_price_weo) || 0
+      const rentalAmount = parseFloat(item.total_rental_amount_weo) || 0
+      const commissionAmount = parseFloat(item.total_commission_amount_weo) || 0
+      const salesAmount = sellingPrice - rentalAmount - commissionAmount
+      salesTrend[date] = (salesTrend[date] || 0) + salesAmount
+    })
+
+    // 9. Usage Volume Trend: daily count of accounts used
+    const { data: usageVolumeData, error: usageVolumeError } = await supabaseServer
+      .from('jira_issues')
+      .select('contract_start_date_weo')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', startOfRangeISO)
+      .lte('contract_start_date_weo', endOfRangeISO)
+
+    if (usageVolumeError) {
+      console.error('Error fetching usage volume:', usageVolumeError)
+    }
+
+    const usageVolumeTrend = {}
+    usageVolumeData?.forEach(item => {
+      const date = new Date(item.contract_start_date_weo).toISOString().split('T')[0]
+      usageVolumeTrend[date] = (usageVolumeTrend[date] || 0) + 1
+    })
+
+    // Previous month rented accounts for rental trend
+    const prevStartISOForRented = prevStart.toISOString()
+    const prevEndISOForRented = prevEnd.toISOString()
+    const { data: prevRentedAccountsRaw, error: prevRentedError } = await supabaseServer
+      .from('jira_issues')
+      .select('id, labels')
+      .eq('project_key', 'WEO')
+      .gte('contract_start_date_weo', prevStartISOForRented)
+      .lte('contract_start_date_weo', prevEndISOForRented)
+
+    if (prevRentedError) {
+      console.error('Error fetching previous month rented accounts:', prevRentedError)
+    }
+
+    // Calculate previous month label for filtering
+    const prevMonthIndex = prevStart.getMonth()
+    const prevYear = prevStart.getFullYear()
+    const prevMonthLabel = `${monthNames[prevMonthIndex]}-${prevYear}`
+    const prevMonthLabelAlt1 = `${monthNames[prevMonthIndex]}${prevYear}`
+    const prevMonthLabelAlt2 = `${monthNames[prevMonthIndex]}-${prevYear.toString().slice(-2)}`
+    
+    const prevRentedAccounts = prevRentedAccountsRaw?.filter(item => {
+      const labels = Array.isArray(item.labels) ? item.labels : (typeof item.labels === 'string' ? [item.labels] : [])
+      if (labels.length === 0) return false
+      
+      return labels.some(label => {
+        const labelStr = typeof label === 'string' ? label.toLowerCase() : String(label).toLowerCase()
+        return labelStr.includes(prevMonthLabel) || 
+               labelStr.includes(prevMonthLabelAlt1) || 
+               labelStr.includes(prevMonthLabelAlt2) ||
+               labelStr.includes(monthNames[prevMonthIndex])
+      })
+    }) || []
+    
+    const prevMonthRentedAccounts = prevRentedAccounts.length || 0
+    const rentalTrendPercentage = prevMonthRentedAccounts > 0
+      ? ((rentedAccounts?.length || 0) - prevMonthRentedAccounts) / prevMonthRentedAccounts * 100
+      : 0
+    
+    const response = {
+      success: true,
+      data: {
+        totalRentedAccounts: rentedAccounts?.length || 0,
+        totalRentedAmount: totalRentedAmount,
+        previousMonthRentedAccounts: prevMonthRentedAccounts,
+        rentalTrendPercentage,
+        totalSalesQuantity: salesQuantityData?.length || 0,
+        totalSalesAmount,
+        totalAccountCreated,
+        previousMonthAccountCreated: prevMonthAccountCreated,
+        growthRate,
+        dailyAccountCreation,
+        rentalTrend,
+        salesTrend,
+        usageVolumeTrend,
+      },
+      debug: {
+        monthLabel,
+        dateRange: {
+          start: startOfRangeISO,
+          end: endOfRangeISO,
+        },
+        rawCounts: {
+          allRentedAccounts: allRentedAccounts?.length || 0,
+          filteredRentedAccounts: rentedAccounts?.length || 0,
+          allSalesQuantity: salesQuantityDataRaw?.length || 0,
+          filteredSalesQuantity: salesQuantityData?.length || 0,
+          allAccountCreated: accountCreatedData?.length || 0,
+        },
+        sampleLabels: allRentedAccounts?.slice(0, 3).map(item => item.labels) || [],
+      },
+    }
+    
+    console.log('API Response:', JSON.stringify(response, null, 2))
+    
+    return NextResponse.json(response)
+  } catch (error) {
+    console.error('Error fetching wealths data:', error)
+    return NextResponse.json(
+      { error: 'Internal server error', details: error.message },
+      { status: 500 }
+    )
+  }
+}
